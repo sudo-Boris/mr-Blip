@@ -1,0 +1,58 @@
+ # Copyright (c) 2022, salesforce.com, inc.
+ # All rights reserved.
+ # SPDX-License-Identifier: BSD-3-Clause
+ # For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
+
+model:
+  arch: blip2_mr
+  model_type: pretrain_flant5xl
+  load_finetuned: True
+  finetuned: "mr_BLIP_checkpoints/ANet/checkpoint_best.pth"
+  use_grad_checkpoint: False
+  freeze_vit: True
+  task: qformer_freeze_lora
+  input_time_format: seconds_integers # [seconds_integers | seconds_floats | relative_integers | relative_floats | framenumbers]
+  interleave_data: True
+  frame_token_aggregation: False # [mean | False]
+
+datasets:
+  anet: # name of the dataset builder
+    vis_processor:
+        eval:
+          name: "blip_video_eval"
+          n_frms: 60
+          image_size: 224
+    text_processor:
+        eval:
+          name: "blip_question"
+          max_words: 50
+
+run:
+  task: moment_retrieval
+  # optimization-specific
+  batch_size_train: 1
+  batch_size_eval: 1
+  num_workers: 8
+
+  # inference-specific
+  max_len: 200
+  min_len: 5
+  num_beams: 5
+  inference_method: "generate"
+
+  seed: 42
+  output_dir: "result/mr_BLIP/ANet/eval"
+
+  evaluate: True
+  test_splits: ["test"]
+
+  # distribution-specific
+  device: "cuda"
+  world_size: 8
+  dist_url: "env://"
+  distributed: True
+  find_unused_parameters: False
+
+  wandb: False
+  wandb_project: "mr_BLIP2"
+  wandb_name: "ANet_eval"

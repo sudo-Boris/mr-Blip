@@ -1,0 +1,76 @@
+ # Copyright (c) 2022, salesforce.com, inc.
+ # All rights reserved.
+ # SPDX-License-Identifier: BSD-3-Clause
+ # For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
+
+model:
+  arch: blip2_mr
+  model_type: pretrain_flant5xl
+  load_finetuned: False # True
+  use_grad_checkpoint: False
+  freeze_vit: True
+  task: qformer_freeze_lora
+  input_time_format: seconds_integers # [seconds_integers | seconds_floats | relative_integers | relative_floats | framenumbers]
+  interleave_data: True
+  frame_token_aggregation: False # [mean | False]
+
+datasets:
+  anet: # name of the dataset builder
+    vis_processor:
+        train:
+          name: "blip2_video_train"
+          n_frms: 60
+          image_size: 224
+        eval:
+          name: "blip_video_eval"
+          n_frms: 60
+          image_size: 224
+    text_processor:
+        train:
+          name: "blip_question"
+          max_words: 50
+        eval:
+          name: "blip_question"
+          max_words: 50
+
+run:
+  task: moment_retrieval
+  # optimizer
+  lr_sched: "linear_warmup_cosine_lr"
+  init_lr: 3e-4
+  min_lr: 3e-5
+  warmup_lr: 1e-8
+  warmup_steps: 23390 # 4678 iters/ epoch * 50 epochs * 0.1 = 23,390
+  # warmup_steps: 4678 # 4678 iters/ epoch * 10 epochs * 0.1 = 4,678
+  # warmup_steps: 14034 # 4678 iters/ epoch * 30 epochs * 0.1 = 14,034
+  weight_decay: 0.05
+  max_epoch: 50
+  batch_size_train: 1
+  batch_size_eval: 1
+  num_workers: 8
+  accum_grad_iters: 4
+
+  max_len: 200
+  min_len: 8
+  num_beams: 5
+
+  seed: 42
+  output_dir: "result/mr_BLIP/ANet/"
+
+  amp: True
+  resume_ckpt_path: null
+
+  evaluate: False
+  train_splits: ["train"]
+  valid_splits: ["val"]
+  test_splits: ["test"]
+
+  device: "cuda"
+  world_size: 8
+  dist_url: "env://"
+  distributed: True
+  find_unused_parameters: True
+
+  wandb: True
+  wandb_project: "mr_BLIP"
+  wandb_name: "ANet_60"
