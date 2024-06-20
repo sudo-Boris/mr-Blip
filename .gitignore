@@ -53,6 +53,9 @@ cover/
 result/
 *.txt
 
+!LICENSE.txt
+!requirements.txt
+
 # Translations
 *.mo
 *.pot
