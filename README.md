@@ -3,11 +3,26 @@
 * Authors: [Boris Meinardus](https://sudo-boris.github.io/), [Anil Batra](https://anilbatra2185.github.io/), [Anna Rohrbach](https://anna-rohrbach.net/), [Marcus Rohrbach](https://rohrbach.vision/)
 * Paper: TBA
 <!-- [arXiv](https://example.com/) -->
-<!-- * Online Demo: Try our Gradio demo on Hugging Face[![Open in Spaces](https://huggingface.co/datasets/huggingface/badges/raw/main/open-in-hf-spaces-sm.svg)](https://huggingface.co/spaces/Shoubin/SeViLA) -->
 
-<img src="./assets/teaser.png" alt="teaser image" width="800"/>
+We introduce
+Mr. BLIP (Mr. as in Moment Retrieval), a multimodal, single-stage
+model that requires no expensive video-language pretraining, no addi-
+tional input signal (e.g., no transcript or audio) and has a simpler and
+more versatile design than prior state-of-the-art methods. We achieve a
+new state-of-the-art in moment retrieval on the widely used benchmarks
+Charades-STA, QVHighlights, and ActivityNet Captions and illustrate
+our method’s versatility with a new state-of-the-art in temporal action
+localization on ActivityNet. Notably, we attain over 9% (absolute) higher
+Recall (at 0.5 and 0.7 IoU) on the challenging long-video multi-moment
+QVHighlights benchmark.
 
-<img src="./assets/model.png" alt="teaser image" width="800"/>
+<p align="center">
+  <img src="./assets/teaser.png" alt="teaser image" width="600"/>
+</p>
+
+<p align="center">
+  <img src="./assets/model.png" alt="architecture image" width="600"/>
+</p>
 
 # Code structure
 
@@ -97,11 +112,21 @@ sh run_scripts/mr_BLIP/train/anet_TAL.sh
 
 ## 5) QVH Evaluation
 
+Should roughly return:
+|               | R1@0.5        | R1@0.7   | mIoU       | mAP@0.5  | mAP@0.75  |
+| ------------- |:-------------:| :-----:  | :--------: | :-----:  | --------: |
+| *Mr. BLIP*    | **76.16**     | **62.63**| **70.32**  | **68.50**| **55.06** |
+
 ```bash
 sh run_scripts/mr_BLIP/eval/qvh.sh
 ```
 
 ## 6) Charades-STA Evaluation
+
+Should roughly return:
+|               | R1@0.5        | R1@0.7   | mIoU      |
+| ------------- |:-------------:| :-----:  | --------: |
+| *Mr. BLIP*    | **69.31**     | **49.29**| **58.63** |
 
 ```bash
 sh run_scripts/mr_BLIP/eval/charades.sh
@@ -109,11 +134,21 @@ sh run_scripts/mr_BLIP/eval/charades.sh
 
 ## 7) ANet Captions Evaluation
 
+Should roughly return:
+|               | R1@0.5        | R1@0.7   | mIoU      |
+| ------------- |:-------------:| :-----:  | --------: |
+| *Mr. BLIP*    | **53.79**     | **35.47**| **51.52** |
+
 ```bash
 sh run_scripts/mr_BLIP/eval/anet.sh
 ```
 
 ## 8) ANet 1.3 (TAL) Evaluation
+
+Should roughly return:
+|               | mAP@0.5   | mAP@0.75  |
+| ------------- | :-----:   | --------: |
+| *Mr. BLIP*    | **67.37** | **52.65** |
 
 ```bash
 sh run_scripts/mr_BLIP/eval/anet_TAL.sh
