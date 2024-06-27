@@ -1,8 +1,7 @@
 # The Surprising Effectiveness of Multimodal Large Language Models for Video Moment Retrieval
 
 * Authors: [Boris Meinardus](https://sudo-boris.github.io/), [Anil Batra](https://anilbatra2185.github.io/), [Anna Rohrbach](https://anna-rohrbach.net/), [Marcus Rohrbach](https://rohrbach.vision/)
-* Paper: TBA
-<!-- [arXiv](https://example.com/) -->
+* Paper: [arxiv](http://arxiv.org/abs/2406.18113)
 
 We introduce
 Mr. BLIP (Mr. as in Moment Retrieval), a multimodal, single-stage
@@ -158,13 +157,18 @@ sh run_scripts/mr_BLIP/eval/anet_TAL.sh
 
 We thank the developers of [LAVIS](https://github.com/salesforce/LAVIS) and [BLIP-2](https://github.com/salesforce/LAVIS/tree/main/projects/blip2) for their public code release.
 
-<!-- # Reference
+# Reference
 
 Please cite our paper if you use our models in your works:
 
 ```bibtex
-@inproceedings{meinardus2024mrBLIP,
-  title   = {The Surprising Effectiveness of Multimodal Large Language Models for Video Moment Retrieval},
-  author  = {Meinardus, Boris and Batra, Anil and Rohrbach, Anna and Rohrbach, Marcus},
-  year    = {2024}
-} -->
+@misc{boris2024surprisingeffectivenessmultimodallarge,
+      title={The Surprising Effectiveness of Multimodal Large Language Models for Video Moment Retrieval}, 
+      author={Meinardus Boris and Batra Anil and Rohrbach Anna and Rohrbach Marcus},
+      year={2024},
+      eprint={2406.18113},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2406.18113}, 
+}
+}
