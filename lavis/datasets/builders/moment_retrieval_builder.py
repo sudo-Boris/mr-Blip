@@ -63,13 +63,6 @@ class ANetBuilder(MomentRetrievalBuilder):
     }
 
 
-@registry.register_builder("anet_TAL")
-class ANetTALBuilder(MomentRetrievalBuilder):
-    DATASET_CONFIG_DICT = {
-        "default": "configs/datasets/anet_TAL/defaults.yaml",
-    }
-
-
 @registry.register_builder("tacos")
 class TACoSBuilder(MomentRetrievalBuilder):
     DATASET_CONFIG_DICT = {

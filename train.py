@@ -102,9 +102,18 @@ def main():
     # add number of occurance in log dir for same name cfg.run_cfg.wandb_name
     # e.g. cfg.run_cfg.wandb_name_1, cfg.run_cfg.wandb_name_2, cfg.run_cfg.wandb_name_3
     # get number of dirs in cfg.run_cfg.output_dir that are cfg.run_cfg.wandb_name_*
-    num_dirs = len(
-        glob(os.path.join(cfg.run_cfg.output_dir, cfg.run_cfg.wandb_name + "-*"))
-    )
+    def count_directories(parent_directory, pattern):
+        return len(
+            [
+                d
+                for d in glob(
+                    os.path.join(os.getcwd(), "lavis", parent_directory, pattern)
+                )
+                if os.path.isdir(d)
+            ]
+        )
+
+    num_dirs = count_directories(cfg.run_cfg.output_dir, f"{cfg.run_cfg.wandb_name}*")
     run_name = f"{cfg.run_cfg.wandb_name}-{num_dirs + 1}"
 
     cfg.run_cfg.output_dir = os.path.join(cfg.run_cfg.output_dir, run_name)

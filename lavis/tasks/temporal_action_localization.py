@@ -21,13 +21,16 @@ from lavis.common.dist_utils import (
 )
 from lavis.datasets.data_utils import prepare_sample
 
-from lavis.tasks.mr_eval import eval_submission
+from lavis.tasks.tal_eval import ANETdetection
 
 
-@registry.register_task("moment_retrieval")
-class MomentRetrievalTask(BaseTask):
+@registry.register_task("temporal_action_localization")
+class TALTask(BaseTask):
     def __init__(self):
         super().__init__()
+        # read txt file with class names and remove "\n"
+        with open("lavis/tasks/ANet_classes.txt", "r") as f:
+            self.classes = f.read().splitlines()
 
     def valid_step(self, model, samples):
         results = []
@@ -71,14 +74,14 @@ class MomentRetrievalTask(BaseTask):
             # print(metrics["mAP"])
             wandb.log(
                 {
-                    "eval/agg_metrics": metrics["agg_metrics"],
+                    "eval/agg_metrics": metrics["agg_metrics"] * 100,
                     # "eval/R1@0.3": metrics["r1"]["0.3"],
-                    "eval/R1@0.5": metrics["r1"]["0.5"],
-                    "eval/R1@0.7": metrics["r1"]["0.7"],
+                    "eval/R1@0.5": metrics["r1"]["0.5"] * 100,
+                    "eval/R1@0.7": metrics["r1"]["0.7"] * 100,
                     # "eval/mAP@0.3": metrics["mAP"]["0.3"],
-                    "eval/mAP@0.5": metrics["mAP"]["0.5"],
-                    "eval/mAP@0.75": metrics["mAP"]["0.75"],
-                    "eval/mIoU": metrics["mIoU"],
+                    "eval/mAP@0.5": metrics["mAP"]["0.5"] * 100,
+                    "eval/mAP@0.75": metrics["mAP"]["0.75"] * 100,
+                    # "eval/mIoU": metrics["mIoU"],
                     "eval/invalid_predictions": metrics["invalid_predictions"],
                 }
             )
@@ -121,56 +124,92 @@ class MomentRetrievalTask(BaseTask):
         """
         results = json.load(open(eval_result_file))
         total_num = len(results)
+        invalid_pred_num = 0
+        class_label_mismatch = 0
 
-        results_interpreted = [
-            {
-                "qid": r["qid"],
-                "pred_relevant_windows": self.moment_str_to_list(r["prediction"]),
-                "relevant_windows": self.moment_str_to_list(r["target"]),
-            }
-            for r in results
-        ]
+        preds = {
+            "video-id": [],
+            "t-start": [],
+            "t-end": [],
+            "label": [],
+            "score": [],
+        }
+        targets = {
+            "video-id": [],
+            "t-start": [],
+            "t-end": [],
+            "label": [],
+        }
 
-        # # compute metrics
-        # # Recall at 1 and mean IoU
-        # r1, r1_avg, mIoU, invalid_pred_num = r1_and_mIoU(submission=results_interpreted)
+        for r in results:
+            targets_interpreted = self.tal_str_to_list(r["target"])
 
-        # # mAP
-        # if "QVHighlight" in results[0]["qid"]:
-        #     mAP = compute_mr_ap(
-        #         submission=results_interpreted,
-        #         iou_thds=np.linspace(0.5, 0.95, 10),
-        #         max_gt_windows=None,
-        #         max_pred_windows=None,
-        #         num_workers=8,
-        #         chunksize=50,
-        #     )
-        # else:
-        #     mAP = {str(t): 0 for t in iou_tresholds}
+            for target in targets_interpreted:
+                targets["video-id"].append(r["qid"])
+                targets["t-start"].append(target[0])
+                targets["t-end"].append(target[1])
+                targets["label"].append(target[2])
 
-        # # if there are no keys 0.5 and 0.7, add them with value 0
-        # if "0.5" not in mAP:
-        #     mAP["0.5"] = 0
-        # if "0.7" not in mAP:
-        #     mAP["0.7"] = 0
-        # if "0.75" not in mAP:
-        #     mAP["0.75"] = 0
+            preds_interpreted = self.tal_str_to_list(r["prediction"])
 
-        all_metrics = eval_submission(results_interpreted, results_interpreted)
+            for pred in preds_interpreted:
 
-        r1_avg = all_metrics["brief"]["MR-full-R1-avg"]
-        mIoU = all_metrics["brief"]["MR-full-mIoU"]
-        invalid_pred_num = all_metrics["brief"]["MR-full-invalid_pred_num"]
+                # count invalid predictions
+                if preds_interpreted == [[-1, -1, -1]]:
+                    invalid_pred_num += 1
+                    break
+
+                if len(pred) != 3:
+                    print(f"Got a sublist with more or less than 3 elements!{pred}")
+                    invalid_pred_num += 1
+                    continue
+
+                # TODO: make sure predicted label matches a class from ANet
+                if pred[2] in self.classes:
+                    label_tmp = pred[2]
+                else:
+                    label_tmp = "Error: class label mismatch!"
+                    class_label_mismatch += 1
+
+                # for debugging purposes, set pred labels to gt labels
+                # get the gt label from the first respective target based on the video-id
+                # idx_target = targets["video-id"].index(r["qid"])
+                # label_tmp = targets["label"][idx_target]
+
+                preds["video-id"].append(r["qid"])
+                preds["t-start"].append(pred[0])
+                preds["t-end"].append(pred[1])
+                preds["label"].append(label_tmp)
+                preds["score"].append(1)
+
+        thresholds = np.linspace(0.5, 0.95, 10)
+
+        self.anet_detection = ANETdetection(targets, tiou_thresholds=thresholds)
+
+        mAP, average_mAP, mRecall, _, _ = self.anet_detection.evaluate(preds)
+        # only  take recall@1 which is at mRecall[:][0]
+        mRecall = mRecall[:, 0]
+        # make recall and mAP into a dictionary with the thresholds as keys
+        mRecall = {str(round(t, 2)): r for t, r in zip(thresholds, mRecall)}
+        mAP = {str(round(t, 2)): a for t, a in zip(thresholds, mAP)}
 
         # log metrics
         metrics = {
-            "agg_metrics": r1_avg,
-            "r1": all_metrics["full"]["MR-R1"],
-            "mAP": all_metrics["full"]["MR-mAP"],
-            "mIoU": mIoU,
+            "agg_metrics": average_mAP,
+            "r1": mRecall,
+            "mAP": mAP,
+            "mIoU": 0,
+            # "mIoU": mIoU,
             "invalid_predictions": invalid_pred_num / total_num,
+            "class_label_mismatch": class_label_mismatch,
             "total": total_num,
         }
+        log_stats = {split_name: {k: v for k, v in metrics.items()}}
+
+        with open(
+            os.path.join(registry.get_path("output_dir"), "evaluate.txt"), "a"
+        ) as f:
+            f.write(json.dumps(log_stats) + "\n")
 
         logging.info(metrics)
         return metrics
@@ -280,45 +319,71 @@ class MomentRetrievalTask(BaseTask):
             for k, meter in metric_logger.meters.items()
         }
 
-    def moment_str_to_list(self, m):
-        """Convert a string of moments to a list of moments.
+    def tal_str_to_list(self, m):
+        """Convert a string of moments and a class label to a list of moments and labels.
         If predicted string is not a list, it means that the model has not yet learned to predict the right format.
         In that case, we return [[-1, -1]] to represent an error.
         This will then lead to an IoU of 0.
         Args:
-            m (str): a string of moments, e.g. "[[0, 1], [4, 7]]"
+            m (str): a string of moments, e.g. "[[0, 1, "label"], [4, 7, "label"]]"
         Returns:
-            list: a list of moments, e.g. [[0, 1], [4, 7]]
+            list: a list of moments, e.g. [[0, 1, "label"], [4, 7, "label"]]
         """
-        if m == "[[-1, -1]]":
-            return [[-1, -1]]
+        if m == "[[-1, -1, -1]]":
+            return [[-1, -1, -1]]
 
         # check if the string has the right format of a nested list using regex
-        # the list should look like this: [[0, 1], [4, 7], ...]
+        # the list should look like this: [[0, 1, "label"], [4, 7, "label"], ...]
         # if not, return [[-1, -1]]
         if not re.match(r"\[\[.*\]\]", m):
-            return [[-1, -1]]
+            return [[-1, -1, -1]]
 
         try:
             _m = ast.literal_eval(m)
         except:
-            return [[-1, -1]]
+            return [[-1, -1, -1]]
 
         # if _m is not a list, it means that the model has not predicted any relevant windows
         # return error
         if not isinstance(_m, list):
             # raise ValueError()
-            return [[-1, -1]]
+            return [[-1, -1, -1]]
 
         # if not nested list, make it nested
 
-        # if a sublist of _m has more than 2 elements, it means that the model has not learned to predict the right format
+        # if a sublist of _m has more than 3 elements, it means that the model has not learned to predict the right format
         # substitute that sublist with [-1, -1]
         for i in range(len(_m)):
             # if isinstance(i, int):
             #     _m[i] = [-1, -1]
-            if len(_m[i]) != 2:
-                # print(f"Got a sublist with more or less than 2 elements!{_m[i]}")
-                _m[i] = [-1, -1]
+            if len(_m[i]) != 3:
+                # print(f"Got a sublist with more or less than 3 elements!{_m[i]}")
+                _m[i] = [-1, -1, -1]
 
         return _m
+
+    def build_datasets(self, cfg):
+        """
+        Build a dictionary of datasets, keyed by split 'train', 'valid', 'test'.
+        Download dataset and annotations automatically if not exist.
+
+        Args:
+            cfg (common.config.Config): _description_
+
+        Returns:
+            dict: Dictionary of torch.utils.data.Dataset objects by split.
+        """
+
+        datasets = dict()
+
+        datasets_config = cfg.datasets_cfg
+        assert len(datasets_config) > 0, "At least one dataset has to be specified."
+
+        for name in datasets_config:
+            dataset_config = datasets_config[name]
+            builder = registry.get_builder_class(name)(dataset_config)
+            dataset = builder.build_datasets()
+
+            datasets[name] = dataset
+
+        return datasets

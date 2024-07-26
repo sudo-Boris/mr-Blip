@@ -10,7 +10,7 @@ model:
   finetuned: "mr_BLIP_checkpoints/ANet_TAL/checkpoint_best.pth"
   use_grad_checkpoint: False
   freeze_vit: True
-  task: qformer_freeze_lora
+  task: qformer_freeze_lora_TAL
   input_time_format: seconds_integers # [seconds_integers | seconds_floats | relative_integers | relative_floats | framenumbers]
   interleave_data: True
   frame_token_aggregation: False # [mean | False]
@@ -28,7 +28,7 @@ datasets:
           max_words: 50
 
 run:
-  task: moment_retrieval
+  task: temporal_action_localization
   # optimization-specific
   batch_size_train: 1
   batch_size_eval: 1
@@ -54,5 +54,5 @@ run:
   find_unused_parameters: False
 
   wandb: False
-  wandb_project: "mr_BLIP2"
+  wandb_project: "mr_BLIP"
   wandb_name: "ANet_TAL_eval"

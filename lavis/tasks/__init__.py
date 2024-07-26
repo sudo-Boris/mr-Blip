@@ -17,6 +17,7 @@ from lavis.tasks.vqa import VQATask, GQATask, AOKVQATask, VideoQA, FrameQA
 from lavis.tasks.vqa_reading_comprehension import VQARCTask, GQARCTask
 from lavis.tasks.dialogue import DialogueTask
 from lavis.tasks.moment_retrieval import MomentRetrievalTask
+from lavis.tasks.temporal_action_localization import TALTask
 
 
 def setup_task(cfg):
@@ -45,4 +46,5 @@ __all__ = [
     "ImageTextPretrainTask",
     "DialogueTask",
     "MomentRetrievalTask",
+    "TALTask",
 ]

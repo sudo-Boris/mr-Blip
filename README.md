@@ -1,18 +1,11 @@
 # The Surprising Effectiveness of Multimodal Large Language Models for Video Moment Retrieval
 
-<!-- * Authors: [Boris Meinardus](https://sudo-boris.github.io/), [Anil Batra](https://anilbatra2185.github.io/), [Anna Rohrbach](https://anna-rohrbach.net/), [Marcus Rohrbach](https://rohrbach.vision/)
-* Paper: [arxiv](http://arxiv.org/abs/2406.18113) -->
+* Authors: [Boris Meinardus](https://sudo-boris.github.io/), [Anil Batra](https://anilbatra2185.github.io/), [Anna Rohrbach](https://anna-rohrbach.net/), [Marcus Rohrbach](https://rohrbach.vision/)
+* Paper: [arxiv](http://arxiv.org/abs/2406.18113)
 
-We introduce
-Mr. BLIP (Mr. as in Moment Retrieval), a multimodal, single-stage
-model that requires no expensive video-language pretraining, no addi-
-tional input signal (e.g., no transcript or audio) and has a simpler and
-more versatile design than prior state-of-the-art methods. We achieve a
-new state-of-the-art in moment retrieval on the widely used benchmarks
-Charades-STA, QVHighlights, and ActivityNet Captions.
-Notably, we attain over 9% (absolute) higher
-Recall (at 0.5 and 0.7 IoU) on the challenging long-video multi-moment
-QVHighlights benchmark.
+We introduce Mr. BLIP (Mr. as in Moment Retrieval), a multimodal, single-stage model that requires no expensive video-language pretraining, no additional input signal (e.g., no transcript or audio) and has a simpler and more versatile design than prior state-of-the-art methods.
+We achieve a new state-of-the-art in moment retrieval on the widely used benchmarks Charades-STA, QVHighlights, and ActivityNet Captions.
+Notably, we attain over 9% (absolute) higher Recall (at 0.5 and 0.7 IoU) on the challenging long-video multi-moment QVHighlights benchmark.
 
 <p align="center">
   <img src="./assets/teaser.png" alt="teaser image" width="600"/>
@@ -59,7 +52,7 @@ pip install -r requirements.txt
 
 ## Download Pretrained Models
 
-We train Mr. BLIP on QVHighlights, Charades-STA, ActivityNet Captions, and ActivityNet 1.3 (TAL) and provide the checkpoints.
+We train Mr. BLIP on QVHighlights, Charades-STA, and ActivityNet Captions and provide the checkpoints.
 Download the [checkpoints](https://drive.google.com/drive/folders/1AR-rdUillx0fy7KS4zbEuswFMl7qR9Gj?usp=sharing) and put them under /mr_BLIP_checkpoints.
 
 # Dataset Preparation
@@ -72,7 +65,6 @@ We test our model on:
 * [QVHighlights](https://github.com/jayleicn/moment_detr)
 
 * [ActivityNet Captions](https://cs.stanford.edu/people/ranjaykrishna/densevid/)
-<!-- * [ActivityNet 1.3 (TAL)](http://activity-net.org/download.html) -->
 
 Please download original MR data and preprocess them via our [scripts](mr_BLIP_data/data_preprocess.ipynb).
 
@@ -101,12 +93,6 @@ sh run_scripts/mr_BLIP/train/charades.sh
 ```bash
 sh run_scripts/mr_BLIP/train/anet.sh
 ```
-
-<!-- ## 4) ANet 1.3 (TAL) Finetuning
-
-```bash
-sh run_scripts/mr_BLIP/train/anet_TAL.sh
-``` -->
 
 ## 4) QVH Evaluation
 
@@ -141,27 +127,16 @@ Should roughly return:
 sh run_scripts/mr_BLIP/eval/anet.sh
 ```
 
-<!-- ## 8) ANet 1.3 (TAL) Evaluation
-
-Should roughly return:
-|               | mAP@0.5   | mAP@0.75  |
-| ------------- | :-----:   | --------: |
-| *Mr. BLIP*    | **67.37** | **52.65** |
-
-```bash
-sh run_scripts/mr_BLIP/eval/anet_TAL.sh
-``` -->
-
 # Acknowledgments
 
 We thank the developers of [LAVIS](https://github.com/salesforce/LAVIS) and [BLIP-2](https://github.com/salesforce/LAVIS/tree/main/projects/blip2) for their public code release.
 
-<!-- # Reference
+# Reference
 
 Please cite our paper if you use our models in your works:
 
 ```bibtex
-@misc{boris2024surprisingeffectivenessmultimodallarge,
+@article{boris2024surprisingeffectivenessmultimodallarge,
       title={The Surprising Effectiveness of Multimodal Large Language Models for Video Moment Retrieval}, 
       author={Meinardus Boris and Batra Anil and Rohrbach Anna and Rohrbach Marcus},
       year={2024},
@@ -170,4 +145,4 @@ Please cite our paper if you use our models in your works:
       primaryClass={cs.CV},
       url={https://arxiv.org/abs/2406.18113}, 
 }
-``` -->
+```

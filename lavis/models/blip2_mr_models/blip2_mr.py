@@ -26,6 +26,7 @@ from lavis.common.dist_utils import is_main_process
 from lavis.models.blip2_mr_models.utils import (
     format_wandb_log_images_and_predictions,
     post_process,
+    post_process_TAL,
     get_timestamps_as_seconds_integers,
     get_timestamps_as_relative_integers,
     get_timestamps_as_seconds_floats,
@@ -81,6 +82,10 @@ class BLIP2_MR(Blip2Base):
         super().__init__()
 
         self.task = task
+        if "TAL" in task:
+            self.post_process = post_process_TAL
+        else:
+            self.post_process = post_process
         self.use_lora = True if "lora" in task else False
         self.use_wandb = True if wandb.run is not None else False
         self.log_samples_every_n = 3000
@@ -171,15 +176,22 @@ class BLIP2_MR(Blip2Base):
         ##########################################################################
 
         ### Q-Former for Image Embeddings ########################################
+        self.multimodal_Qformer = False
+
         self.Qformer, self.query_tokens = self.init_Qformer(
             num_query_token, self.visual_encoder.num_features
         )
-        self.Qformer.cls = None
-        self.Qformer.bert.embeddings.word_embeddings = None
-        self.Qformer.bert.embeddings.position_embeddings = None
-        for layer in self.Qformer.bert.encoder.layer:
-            layer.output = None
-            layer.intermediate = None
+
+        if not self.multimodal_Qformer:
+            self.Qformer.cls = None
+            self.Qformer.bert.embeddings.word_embeddings = None
+            self.Qformer.bert.embeddings.position_embeddings = None
+            for layer in self.Qformer.bert.encoder.layer:
+                layer.output = None
+                layer.intermediate = None
+        else:
+            self.Qformer_tokenizer = self.init_tokenizer()
+
         self.num_query_token = num_query_token
         self.t5_proj = nn.Linear(
             self.Qformer.config.hidden_size, self.t5_model.config.hidden_size
@@ -234,20 +246,51 @@ class BLIP2_MR(Blip2Base):
         )  # bt n c
 
         ### Apply Q-Former for Image Embeddings ####################################
-        query_tokens_qa = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
-        frames_after_qformer = self.Qformer.bert(
-            query_embeds=query_tokens_qa,
-            encoder_hidden_states=image_embeds,
-            encoder_attention_mask=image_atts,
-            return_dict=True,
-        )
-        frames_for_t5 = self.t5_proj(frames_after_qformer.last_hidden_state)
+        query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
+
+        if self.multimodal_Qformer:
+            query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(
+                self.device
+            )
+
+            text = self.Qformer_tokenizer(
+                [
+                    q for q in query_prompt for _ in range(t)
+                ],  # apply query to each frame
+                return_tensors="pt",
+                padding=True,
+            ).to(self.device)
+
+            attention_mask = torch.cat([query_atts, text.attention_mask], dim=1)
+
+            output = self.Qformer.bert(
+                text.input_ids,
+                query_embeds=query_tokens,
+                attention_mask=attention_mask,
+                encoder_hidden_states=image_embeds,
+                encoder_attention_mask=image_atts,
+                return_dict=True,
+            )
+
+            frames_for_projection = output.last_hidden_state[
+                :, : query_tokens.size(1), :
+            ]
+        else:
+            frames_after_qformer = self.Qformer.bert(
+                query_embeds=query_tokens,
+                encoder_hidden_states=image_embeds,
+                encoder_attention_mask=image_atts,
+                return_dict=True,
+            )
+            frames_for_projection = frames_after_qformer.last_hidden_state
+
+        frames_for_t5 = self.t5_proj(frames_for_projection)
 
         # TODO: Use average pooling to aggregate the 32 embeddings of one frame
         if self.frame_token_aggregation:
             assert self.frame_token_aggregation in [
                 "mean",
-                None,
+                False,
             ], "Invalid aggregation method, please choose from ['mean']"
             frames_for_t5 = frames_for_t5.mean(dim=1, keepdim=True)
 
@@ -312,6 +355,7 @@ class BLIP2_MR(Blip2Base):
                             wandb_table_data=self.wandb_table_data,
                             pred=pred,
                             video_prompt=video_prompt,
+                            post_process_fn=self.post_process,
                             input_time_format=self.input_time_format,
                             interleave_data=True,
                             train_data=True,
@@ -581,13 +625,14 @@ class BLIP2_MR(Blip2Base):
         samples,
         use_nucleus_sampling=False,
         num_beams=5,
-        max_length=30,
-        min_length=1,
+        max_length=50,
+        min_length=8,
         top_p=0.9,
         repetition_penalty=1.0,
         length_penalty=1.0,
         num_captions=1,
         temperature=1,
+        output_attentions=False,
     ):
         """
         Args:
@@ -679,6 +724,7 @@ class BLIP2_MR(Blip2Base):
                 return_dict_in_generate=True,
                 output_hidden_states=True,
                 output_scores=True,
+                output_attentions=output_attentions,
             )
 
             # tokenizer decode outputs
@@ -696,13 +742,12 @@ class BLIP2_MR(Blip2Base):
             self.input_time_format == "relative_integers"
             or self.input_time_format == "relative_floats"
         ):
-            # print("relative")
-            prediction = [post_process(pred) for pred in pred_ans]
+            prediction = [self.post_process(pred) for pred in pred_ans]
             out["prediction"] = self.convert_to_absolute_time(
                 prediction, out["duration"]
             )
         else:
-            out["prediction"] = [post_process(pred) for pred in pred_ans]
+            out["prediction"] = [self.post_process(pred) for pred in pred_ans]
 
         out["raw_prediction"] = pred_ans
         out["answer"] = answer
@@ -718,6 +763,7 @@ class BLIP2_MR(Blip2Base):
                         wandb_table_data=self.wandb_table_data_eval,
                         pred=pred_ans,
                         video_prompt=video_prompt,
+                        post_process_fn=self.post_process,
                         input_time_format=self.input_time_format,
                         interleave_data=True,
                         train_data=False,

@@ -58,8 +58,11 @@ from lavis.datasets.builders.moment_retrieval_builder import (
     MomentRetrievalBuilder,
     TACoSBuilder,
     ANetBuilder,
-    ANetTALBuilder,
     MixedBuilder,
+)
+
+from lavis.datasets.builders.temporal_action_localization_builder import (
+    ANetTALBuilder,
 )
 
 from lavis.common.registry import registry

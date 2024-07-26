@@ -36,11 +36,11 @@ def post_process(pred):
     #   [[0, 1], [4, 7]] -> [0, 1], [4, 7]
     pred = pred[1:-1]
 
-    # split at any white space that is followed by a "]" to get a list of windows
+    # split at any white space that is followed by a "[" to get a list of windows
     # e.g.
     #   "[0, 1] [4, 7]" → ["[0, 1]", "[4, 7]"]
     #   "[0, 1], [4, 7]" → ["[0, 1],", "[4, 7]"]
-    windows = re.split(r"\s+(?=\])", pred)
+    windows = re.split(r"\s+(?=\[)", pred)
 
     output = []
 
@@ -79,11 +79,103 @@ def post_process(pred):
     return output
 
 
+def post_process_TAL(pred):
+    """Post process predicted output to be in the format of moments with labels, i.e. [[0, 1, "label"], [4, 7, "label"]].
+        - if no comma, i.e. " " → add comma, i.e. ", "
+        - if t_start > t_end → swap them
+        - if two comma: ",," → ","
+    Args:
+        pred (str): predicted output with potential errors, e.g. "[[0, 1, "label"], [4, 7, "label"]]"
+    Returns:
+        str: post processed predicted output, e.g. "[[0, 1, "label"], [4, 7, "label"]]"
+    """
+
+    pred = pred.split("</s>")[0]
+
+    # if the string ends with a ",]", remove the comma
+    # e.g.
+    #   "[[0, 1, "label"], [4, 7, "label"],]" -> "[[0, 1, "label"], [4, 7, "label"]]"
+    pred = re.sub(r",+\]", "]", pred)
+
+    # check if the string has the right format of a nested list
+    # the list should look like this: [[0, 1, "label"], [4, 7, "label"], ...]
+    # if not, return "[[-1, -1]]"
+    if not re.match(r"\[\[.*\]\]", pred):
+        return "[[-1, -1, -1]]"
+
+    # remove the first and last bracket
+    # e.g.
+    #   [[0, 1, "label"] [4, 7, "label"]] -> [0, 1, "label"] [4, 7, "label"]
+    #   [[0, 1, "label"], [4, 7, "label"]] -> [0, 1, "label"], [4, 7, "label"]
+    pred = pred[1:-1]
+
+    # split at any white space that is followed by a "[" to get a list of windows
+    # e.g.
+    #   "[0, 1, "label"] [4, 7, "label"]" → ["[0, 1, "label"]", "[4, 7, "label"]"]
+    #   "[0, 1, "label"], [4, 7, "label"]" → ["[0, 1, "label"],", "[4, 7, "label"]"]
+    windows = re.split(r"\s+(?=\[)", pred)
+
+    output = []
+
+    for window in windows:
+        # if there is one or more comma at the end of the window, remove it
+        # e.g.
+        #   "[0, 1, "label"]," → "[0, 1, "label"]"
+        #   "[0, 1, "label"],," → "[0, 1, "label"]"
+        window = re.sub(r",+$", "", window)
+
+        # if there is no comma in the window, add one
+        # e.g.
+        #   "[0 1, "label"]" → "[0, 1, "label"]"
+        window = re.sub(r"(\d) (\d)", r"\1, \2", window)
+        # e.g.
+        #  "[0, 1 "label"]" → "[0, 1, "label"]"
+        window = re.sub(r"(\d), (\d) (\w+)", r"\1, \2, \3", window)
+        # e.g.
+        #  "[0 1 label]" → "[0, 1, "label"]"
+        window = re.sub(r"(\d) (\d) (\w+)", r"\1, \2, \3", window)
+
+        # if there are two or more commas in the window, remove all but one
+        # e.g.
+        #   "[0,, 1, "label"]" → "[0, 1, "label"]"
+        window = re.sub(r",+", ",", window)
+
+        # if the two numbers are not in the right order, swap them
+        # e.g.
+        #   "[1, 0, "label"]" → "[0, 1, "label"]"
+        # find all numbers in the window
+        numbers = re.findall(r"\d+", window)
+        # find the labels in the window
+        # first remove the numbers
+        text = re.sub(r"\d+", "", window)
+        # then find the labels
+        label = re.findall(r"\w+", text)
+        if label == []:
+            label = ['"No label"']
+
+        # get the two numbers
+        if len(numbers) == 2:
+            t_start, t_end = numbers
+            if int(t_start) > int(t_end):
+                window = "[" + t_end + ", " + t_start + ", '" + " ".join(label) + "']"
+            # else:
+            #     window = "[" + t_start + ", " + t_end + ", '" + " ".join(label) + "']"
+        else:
+            return "[[-1, -1, -1]]"
+
+        output.append(window)
+
+    output = "[" + ", ".join(output) + "]"
+
+    return output
+
+
 def format_wandb_log_images_and_predictions(
     samples,
     wandb_table_data,
     pred,
     video_prompt,
+    post_process_fn=post_process,
     input_time_format=None,
     interleave_data=True,
     train_data=True,
@@ -108,7 +200,7 @@ def format_wandb_log_images_and_predictions(
         query = video_prompt[idx] + "<frames> </vid>" + query_prompt[idx]
 
     pred = pred[idx]
-    processed_pred = post_process(pred)
+    processed_pred = post_process_fn(pred)
     qid = qid[idx]
     answer = answer[idx]
     duration = samples["duration"][idx]
@@ -256,6 +348,50 @@ def moment_str_to_list(m):
         if len(_m[i]) != 2:
             # print(f"Got a sublist with more or less than 2 elements!{_m[i]}")
             _m[i] = [-1, -1]
+
+    return _m
+
+
+def tal_str_to_list(m):
+    """Convert a string of moments and a class label to a list of moments and labels.
+    If predicted string is not a list, it means that the model has not yet learned to predict the right format.
+    In that case, we return [[-1, -1]] to represent an error.
+    This will then lead to an IoU of 0.
+    Args:
+        m (str): a string of moments, e.g. "[[0, 1, "label"], [4, 7, "label"]]"
+    Returns:
+        list: a list of moments, e.g. [[0, 1, "label"], [4, 7, "label"]]
+    """
+    if m == "[[-1, -1, -1]]":
+        return [[-1, -1, -1]]
+
+    # check if the string has the right format of a nested list using regex
+    # the list should look like this: [[0, 1, "label"], [4, 7, "label"], ...]
+    # if not, return [[-1, -1]]
+    if not re.match(r"\[\[.*\]\]", m):
+        return [[-1, -1, -1]]
+
+    try:
+        _m = ast.literal_eval(m)
+    except:
+        return [[-1, -1, -1]]
+
+    # if _m is not a list, it means that the model has not predicted any relevant windows
+    # return error
+    if not isinstance(_m, list):
+        # raise ValueError()
+        return [[-1, -1, -1]]
+
+    # if not nested list, make it nested
+
+    # if a sublist of _m has more than 3 elements, it means that the model has not learned to predict the right format
+    # substitute that sublist with [-1, -1]
+    for i in range(len(_m)):
+        # if isinstance(i, int):
+        #     _m[i] = [-1, -1]
+        if len(_m[i]) != 3:
+            # print(f"Got a sublist with more or less than 3 elements!{_m[i]}")
+            _m[i] = [-1, -1, -1]
 
     return _m
 

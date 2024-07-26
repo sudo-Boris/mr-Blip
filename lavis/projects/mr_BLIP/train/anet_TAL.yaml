@@ -9,7 +9,7 @@ model:
   load_finetuned: False # True
   use_grad_checkpoint: False
   freeze_vit: True
-  task: qformer_freeze_lora
+  task: qformer_freeze_lora_TAL
   input_time_format: seconds_integers # [seconds_integers | seconds_floats | relative_integers | relative_floats | framenumbers]
   interleave_data: True
   frame_token_aggregation: False # [mean | False]
@@ -34,7 +34,7 @@ datasets:
           max_words: 50
 
 run:
-  task: moment_retrieval
+  task: temporal_action_localization
   # optimizer
   lr_sched: "linear_warmup_cosine_lr"
   init_lr: 3e-4
@@ -71,4 +71,4 @@ run:
 
   wandb: True
   wandb_project: "mr_BLIP"
-  wandb_name: "ANet_TAL_60"
+  wandb_name: "ANet_TAL"

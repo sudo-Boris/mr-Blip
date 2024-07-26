@@ -1,4 +1,1 @@
-# Should return:
-# {"agg_metrics": 52.633, "r1": {"0.5": 71.17, "0.55": 67.82, "0.6": 64.58, "0.65": 61.29, "0.7": 57.75, "0.75": 53.9, "0.8": 49.35, "0.85": 43.0, "0.9": 34.51, "0.95": 22.96}, "mAP": {"0.5": 67.37, "0.55": 64.9, "0.6": 62.16, "0.65": 59.44, "0.7": 56.3, "0.75": 52.65, "0.8": 48.43, "0.85": 42.31, "0.9": 34.09, "0.95": 22.65, "average": 51.03}, "mIoU": 0.675117104012859, "invalid_predictions": 0.0018262987012987013, "total": 4928}
-
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.run --nproc_per_node=8 evaluate.py --cfg-path lavis/projects/mr_BLIP/eval/anet_TAL.yaml
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.run --nproc_per_node=8 evaluate.py --cfg-path lavis/projects/mr_BLIP/eval/anet_TAL.yam
