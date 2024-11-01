@@ -51,6 +51,7 @@ from lavis.datasets.builders.dialogue_builder import AVSDDialBuilder
 
 from lavis.datasets.builders.moment_retrieval_builder import (
     QVHBuilder,
+    QVHQBuilder,
     Charades_STABuilder,
     Charades_STA_seconds_decimal_Builder,
     Charades_STA_relative_integer_Builder,
@@ -64,6 +65,8 @@ from lavis.datasets.builders.moment_retrieval_builder import (
 from lavis.datasets.builders.temporal_action_localization_builder import (
     ANetTALBuilder,
 )
+
+# from lavis.datasets.builders.audio_moment_retrieval_builder import EpicSoundsBuilder
 
 from lavis.common.registry import registry
 
@@ -97,6 +100,7 @@ __all__ = [
     "TVQABuilder",
     "VLEPBuilder",
     "QVHBuilder",
+    "QVHQBuilder",
     "Charades_STABuilder",
     "Charades_STA_seconds_decimal_Builder",
     "Charades_STA_relative_integer_Builder",
@@ -106,6 +110,7 @@ __all__ = [
     "ANetBuilder",
     "ANetTALBuilder",
     "MixedBuilder",
+    # "EpicSoundsBuilder",
 ]
 
 

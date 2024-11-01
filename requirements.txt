@@ -47,13 +47,15 @@ python-magic
 scikit-image
 sentencepiece
 spacy
-streamlit
+# streamlit
 timm==0.4.12
 # torchvision
 tqdm
 transformers>=4.25.0
 webdataset
-wheel
+wheel==0.2.100
 
-peft
-wandb
+peft==0.13.0
+wandb==0.18.3
+
+av

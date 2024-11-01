@@ -66,6 +66,13 @@ class NextQABuilder(MCVideoQABuilder):
     }
 
 
+@registry.register_builder("nextgqa")
+class NextQABuilder(MCVideoQABuilder):
+    DATASET_CONFIG_DICT = {
+        "default": "configs/datasets/nextgqa/defaults_qa.yaml",
+    }
+
+
 @registry.register_builder("star")
 class STARBuilder(MCVideoQABuilder):
     DATASET_CONFIG_DICT = {

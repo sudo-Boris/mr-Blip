@@ -4,7 +4,7 @@
  # For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
 
 datasets:
-  nextqa: # name of the dataset builder
+  nextgqa: # name of the dataset builder
     # data_dir: ${env.data_dir}/datasets
     data_type: videos # [images|videos|features]
     build_info:
@@ -14,10 +14,12 @@ datasets:
           url: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/train.json
           storage: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/train.json
         val:
-          url: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/val.json
-          storage: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/val.json
+          url: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/nextgqa/test.json
+          storage: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/nextgqa/test.json
+          # url: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/nextgqa/val.json
+          # storage: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/nextgqa/val.json
         test:
-          url: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/val.json
-          storage: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/val.json
+          url: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/nextgqa/test.json
+          storage: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/annotations/NExT_QA/lavis/nextgqa/test.json
       videos:
         storage: /pfss/mlde/workspaces/mlde_wsp_Rohrbach/data/raw/NExT

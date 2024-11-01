@@ -1,10 +1,13 @@
 import os
 import re
 import ast
+import av
+import logging
 
 import torch
 from torch.cuda.amp import autocast as autocast
 import wandb
+import numpy as np
 
 # set the environment variable TOKENIZERS_PARALLELISM = false
 # to disable tokenizers parallelism
@@ -250,6 +253,82 @@ def format_wandb_log_images_and_predictions(
     return out, wandb_table_data
 
 
+def format_wandb_log_images_and_predictions_QA(
+    samples,
+    wandb_table_data,
+    pred_mr,
+    pred,
+    train_data=True,
+):
+    out = {}
+
+    video = samples["video"]
+    image, qid = samples["relevant_frames"], samples["query_id"]
+    b, t, c, h, w = image.size()
+    query_prompt = samples["qa_input"]
+    answer = samples["qa_output"]
+
+    # get samples
+    idx = torch.randint(0, b, (1,)).item()
+    relevant_frames = []
+    for frame in image[idx]:
+        frame = frame.cpu().numpy().transpose(1, 2, 0)
+        frame = wandb.Image(frame)
+        relevant_frames.append(frame)
+    all_frames = []
+    for frame in video[idx]:
+        frame = frame.cpu().numpy().transpose(1, 2, 0)
+        frame = wandb.Image(frame)
+        all_frames.append(frame)
+    query = " ".join([f"<f_{i}>" for i in range(t)]) + query_prompt[idx]
+
+    pred = pred[idx]
+    pred_mr = pred_mr[idx]
+    qid = qid[idx]
+    answer = answer[idx]
+    duration = samples["duration"][idx]
+
+    # Annoying wandb workaround ...
+    # add samples to wandb table data log
+    wandb_table_data.append(
+        [
+            qid,
+            all_frames,
+            relevant_frames,
+            query,
+            pred_mr,
+            pred,
+            answer,
+            duration,
+        ]
+    )
+
+    # create new table objects
+    wandb_table = wandb.Table(
+        columns=[
+            "qid",
+            "all_frames",
+            "relevant_frames",
+            "query",
+            "pred_mr",
+            "pred",
+            "answer",
+            "duration",
+        ]
+    )
+
+    # add samples to table
+    for row in wandb_table_data:
+        wandb_table.add_data(*row)
+
+    if train_data:
+        out["Samples_during_training"] = wandb_table
+    else:
+        out["Samples_during_eval"] = wandb_table
+
+    return out, wandb_table_data
+
+
 def convert_to_absolute_time(prediction, duration, input_time_format):
     """Convert relative timestamps to absolute timestamps.
     Args:
@@ -343,8 +422,8 @@ def moment_str_to_list(m):
     # if a sublist of _m has more than 2 elements, it means that the model has not learned to predict the right format
     # substitute that sublist with [-1, -1]
     for i in range(len(_m)):
-        if isinstance(i, int):
-            _m[i] = [-1, -1]
+        # if isinstance(_m[i], int):
+        #     _m[i] = [-1, -1]
         if len(_m[i]) != 2:
             # print(f"Got a sublist with more or less than 2 elements!{_m[i]}")
             _m[i] = [-1, -1]
@@ -538,3 +617,65 @@ def get_timestamps_as_framenumbers(
         new_timestamps.append(torch.tensor([i for i in range(len(t))]))
 
     return new_timestamps, durations, new_video_prompts
+
+
+def get_frames(video_path, start_time, end_time, n_frames=4):
+    """
+    Get n_frames equally spaced frames from a video between start_time and end_time.
+
+    Args:
+        video_path (str): path to the video
+        start_time (float): start time in seconds
+        end_time (float): end time in seconds
+        n_frames (int): number of frames to get
+
+    Returns:
+        torch.Tensor: tensor of frames. Shape: (n_frames, height, width, 3)
+
+    """
+    assert n_frames > 0, "n_frames must be greater than 0"
+    assert os.path.exists(video_path), f"video_path {video_path} does not exist"
+
+    if start_time > end_time:
+        print(f"start_time {start_time} is greater than end_time {end_time}")
+        # swap the values
+        start_time, end_time = end_time, start_time
+
+    with av.open(video_path) as container:
+        # Seek to the start time
+        container.seek(int(start_time * 1000000))  # seek() uses microseconds
+
+        frames = []
+        for frame in container.decode(video=0):
+            if frame.time < start_time:
+                continue
+            if frame.time > end_time:
+                break
+            frames.append(frame)
+
+        if frames == []:
+            logging.warning(
+                f"No frames found between {start_time} and {end_time}. Just taking the entire video."
+            )
+            # get all frames from the video
+            container.seek(0)  # seek() uses microseconds
+            for frame in container.decode(video=0):
+                frames.append(frame)
+
+        # Get n_frames equally spaced frames
+        if len(frames) < n_frames:
+            # copy the last frame to fill the list
+            frames += [frames[-1]] * (n_frames - len(frames))
+        else:
+            # [1:] to skip the first frame
+            frames = [frames[i] for i in range(0, len(frames), len(frames) // n_frames)]
+
+        if len(frames) > n_frames:
+            frames = frames[1:]
+
+    if n_frames > 1:
+        frames = torch.Tensor(np.stack([x.to_ndarray(format="rgb24") for x in frames]))
+    else:
+        frames = torch.Tensor(np.asarray([frames[0].to_ndarray(format="rgb24")]))
+
+    return frames

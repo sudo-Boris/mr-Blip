@@ -8,7 +8,10 @@
 from lavis.common.registry import registry
 from lavis.common.utils import get_cache_path
 from lavis.datasets.builders.base_dataset_builder import BaseDatasetBuilder
-from lavis.datasets.datasets.moment_retrieval_dataset import MomentRetrievalDataset
+from lavis.datasets.datasets.moment_retrieval_dataset import (
+    MomentRetrievalDataset,
+    MomentRetrievalQuestionsDataset,
+)
 
 
 class MomentRetrievalBuilder(BaseDatasetBuilder):
@@ -21,10 +24,27 @@ class MomentRetrievalBuilder(BaseDatasetBuilder):
         return datasets
 
 
+class MomentRetrievalQuestionsBuilder(BaseDatasetBuilder):
+    train_dataset_cls = MomentRetrievalQuestionsDataset
+    eval_dataset_cls = MomentRetrievalQuestionsDataset
+
+    def build(self):
+        datasets = super().build()
+
+        return datasets
+
+
 @registry.register_builder("qvh")
 class QVHBuilder(MomentRetrievalBuilder):
     DATASET_CONFIG_DICT = {
         "default": "configs/datasets/qvh/defaults.yaml",
+    }
+
+
+@registry.register_builder("qvhQ")
+class QVHQBuilder(MomentRetrievalQuestionsBuilder):
+    DATASET_CONFIG_DICT = {
+        "default": "configs/datasets/qvhQ/defaults.yaml",
     }
 
 

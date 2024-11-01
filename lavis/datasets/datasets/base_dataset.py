@@ -28,8 +28,8 @@ class BaseDataset(Dataset):
         for ann_path in ann_paths:
             if ".json" in ann_path:
                 self.annotation.extend(json.load(open(ann_path, "r")))
-                # print("in base_dataset.py: reducing number of samples to 100")
-                # self.annotation = self.annotation[:100]
+                # print("in base_dataset.py: reducing number of samples to 20")
+                # self.annotation = self.annotation[:20]
                 if "train" in ann_path:
                     self.data_type = "train"
                 else:

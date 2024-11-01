@@ -12,12 +12,21 @@ import torch
 import numpy as np
 import random
 
+import torch.distributed as dist
+import wandb
+
 import lavis.common.dist_utils as dist_utils
 from lavis.common.registry import registry
+from lavis.common.logger import MetricLogger
 from lavis.common.vqa_tools.vqa import VQA
 from lavis.common.vqa_tools.vqa_eval import VQAEval
 from lavis.tasks.base_task import BaseTask
-from lavis.common.dist_utils import main_process
+from lavis.common.dist_utils import (
+    main_process,
+    is_dist_avail_and_initialized,
+    is_main_process,
+)
+from lavis.datasets.data_utils import prepare_sample
 
 
 @registry.register_task("vqa")
@@ -433,7 +442,9 @@ class VideoQA(BaseTask):
     def valid_step(self, model, samples):
         results = []
 
-        outputs = model.generate(samples)
+        # if "QA" in model.task:
+        outputs = model.videoQA_generate(samples)
+        # outputs = model.generate(samples)
 
         answer = outputs["answer"]
         qid = outputs["qid"]
@@ -471,7 +482,56 @@ class VideoQA(BaseTask):
             eval_result_file=eval_result_file, split_name=split_name
         )
 
+        if is_main_process() and wandb.run is not None:
+            # print(metrics["mAP"])
+
+            avg_T = (metrics["TN"] + metrics["TC"] + metrics["TP"]) / 3
+            avg_D = (metrics["DL"] + metrics["DO"] + metrics["DC"]) / 3
+            avg_C = (metrics["CH"] + metrics["CW"]) / 2
+            wandb.log(
+                {
+                    "eval/agg_metrics": metrics["agg_metrics"],
+                    "eval/avg_T": avg_T,
+                    "eval/avg_D": avg_D,
+                    "eval/avg_C": avg_C,
+                    "eval/CH": metrics["CH"],
+                    "eval/CW": metrics["CW"],
+                    "eval/TN": metrics["TN"],
+                    "eval/TC": metrics["TC"],
+                    "eval/DL": metrics["DL"],
+                    "eval/DO": metrics["DO"],
+                    "eval/DC": metrics["DC"],
+                    "eval/TP": metrics["TP"],
+                }
+            )
+
         return metrics
+
+    def evaluation(self, model, data_loader, cuda_enabled=True):
+        metric_logger = MetricLogger(delimiter="  ")
+        header = "Evaluation"
+        # TODO make it configurable
+        print_freq = 10
+
+        results = []
+
+        i = 0
+        for samples in metric_logger.log_every(data_loader, print_freq, header):
+            samples = prepare_sample(samples, cuda_enabled=cuda_enabled)
+
+            samples.update({"iters": i})
+
+            eval_output = self.valid_step(model=model, samples=samples)
+            results.extend(eval_output)
+            i += 1
+
+            # print("breaking in evaluation in moment_retrieval.py")
+            # break
+
+        if is_dist_avail_and_initialized():
+            dist.barrier()
+
+        return results
 
     @main_process
     def _report_metrics(self, eval_result_file, split_name):
@@ -529,6 +589,274 @@ class VideoQA(BaseTask):
 
         logging.info(metrics)
         return metrics
+
+
+@registry.register_task("videogqa")
+class VideoGQA(BaseTask):
+    def __init__(self):
+        super().__init__()
+        self.ANS_MAPPING = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
+
+    def valid_step(self, model, samples):
+        results = []
+
+        # if "QA" in model.task:
+        outputs = model.videoQA_generate(samples)
+        # outputs = model.generate(samples)
+
+        answer = outputs["answer"]
+        qid = outputs["qid"]
+        output_text = outputs["output_text"]
+        relevant_moments = outputs["relevant_moments"]
+        relevant_moments_gt = outputs["relevant_moments_gt"].tolist()
+        duration = samples["duration"]
+
+        if "frame_idx" in outputs:
+            frame_idx = outputs["frame_idx"]
+        else:
+            frame_idx = [0 for i in range(len(qid))]
+        # print(qid)
+        # print(len(output_text), output_text)
+        assert len(qid) == len(output_text)
+        assert len(qid) == len(answer)
+
+        for a, q, o, f, d, m, mgt in zip(
+            answer,
+            qid,
+            output_text,
+            frame_idx,
+            duration,
+            relevant_moments,
+            relevant_moments_gt,
+        ):
+            # l =  l[self.ANS_MAPPING[a[-1]]]
+            if isinstance(d, torch.Tensor):
+                d = d.item()
+            results.append(
+                {
+                    "qid": q,
+                    "prediction": o,
+                    "target": self.ANS_MAPPING[a[-1]],
+                    "frame_idx": f,
+                    "relevant_moments": m,
+                    "relevant_moments_gt": mgt,
+                    "duration": d,
+                }
+            )
+
+        return results
+
+    def after_evaluation(self, val_result, split_name, epoch, **kwargs):
+        eval_result_file = self.save_result(
+            result=val_result,
+            result_dir=registry.get_path("result_dir"),
+            filename="{}_epoch{}".format(split_name, epoch),
+        )
+
+        metrics = self._report_metrics(
+            eval_result_file=eval_result_file, split_name=split_name
+        )
+
+        if is_main_process() and wandb.run is not None:
+            # print(metrics["mAP"])
+
+            avg_T = (metrics["TN"] + metrics["TC"] + metrics["TP"]) / 3
+            # avg_D = (metrics["DL"] + metrics["DO"] + metrics["DC"]) / 3
+            avg_C = (metrics["CH"] + metrics["CW"]) / 2
+            wandb.log(
+                {
+                    "eval/Acc@QA": metrics["agg_metrics"],
+                    "eval/avg_T": avg_T,
+                    # "eval/avg_D": avg_D,
+                    "eval/avg_C": avg_C,
+                    "eval/CH": metrics["CH"],
+                    "eval/CW": metrics["CW"],
+                    "eval/TN": metrics["TN"],
+                    "eval/TC": metrics["TC"],
+                    # "eval/DL": metrics["DL"],
+                    # "eval/DO": metrics["DO"],
+                    # "eval/DC": metrics["DC"],
+                    "eval/TP": metrics["TP"],
+                    "eval/Acc@GQA": metrics["Acc@GQA"],
+                    "eval/mIoP": metrics["mIoP"],
+                    "eval/TIoP@0.3": metrics["TIoP@0.3"],
+                    "eval/TIoP@0.5": metrics["TIoP@0.5"],
+                    "eval/mIoU": metrics["mIoU"],
+                    "eval/TIoU@0.3": metrics["TIoU@0.3"],
+                    "eval/TIoU@0.5": metrics["TIoU@0.5"],
+                }
+            )
+
+        return metrics
+
+    def evaluation(self, model, data_loader, cuda_enabled=True):
+        metric_logger = MetricLogger(delimiter="  ")
+        header = "Evaluation"
+        # TODO make it configurable
+        print_freq = 10
+
+        results = []
+
+        i = 0
+        for samples in metric_logger.log_every(data_loader, print_freq, header):
+            samples = prepare_sample(samples, cuda_enabled=cuda_enabled)
+
+            samples.update({"iters": i})
+
+            eval_output = self.valid_step(model=model, samples=samples)
+            results.extend(eval_output)
+            i += 1
+
+            # print("breaking in evaluation in moment_retrieval.py")
+            # break
+
+        if is_dist_avail_and_initialized():
+            dist.barrier()
+
+        return results
+
+    @main_process
+    def _report_metrics(self, eval_result_file, split_name):
+        results = json.load(open(eval_result_file))
+        total_num = len(results)
+        acc = 0
+        qtype_correct_dict = {}
+        qtype_total_dict = {}
+        metrics = {}
+        for r in results:
+            qtype = r["qid"].split("_")[0]
+            if qtype not in qtype_total_dict:
+                qtype_total_dict[qtype] = 1
+            else:
+                qtype_total_dict[qtype] += 1
+
+            if r["prediction"] == r["target"]:
+                acc += 1
+                if qtype not in qtype_correct_dict:
+                    qtype_correct_dict[qtype] = 1
+                else:
+                    qtype_correct_dict[qtype] += 1
+
+        # If there is a qtype that has no correct prediction, then it still has to be added to the dict with 0 correct.
+        # Otherwise, the following code will throw a key error.
+        qtype_correct_dict = {
+            qtype: qtype_correct_dict[qtype] if qtype in qtype_correct_dict else 0
+            for qtype in qtype_total_dict
+        }
+
+        for qtype in qtype_total_dict:
+            metrics[qtype] = qtype_correct_dict[qtype] / qtype_total_dict[qtype] * 100
+
+        ### GQA specific metrics ##########################
+        gqa_metrics = eval_ground(results)
+        metrics.update(gqa_metrics)
+        ###################################################
+
+        metrics.update({"agg_metrics": acc / total_num, "total": total_num})
+
+        log_stats = {split_name: {k: v for k, v in metrics.items()}}
+
+        with open(
+            os.path.join(registry.get_path("output_dir"), "evaluate.txt"), "a"
+        ) as f:
+            f.write(json.dumps(log_stats) + "\n")
+
+        logging.info(metrics)
+        return metrics
+
+
+def get_tIoU(loc, span):
+
+    if span[0] == span[-1]:
+        if loc[0] <= span[0] and span[0] <= loc[1]:
+            return 0, 1
+        else:
+            return 0, 0
+
+    span_u = (min(loc[0], span[0]), max(loc[-1], span[-1]))
+    span_i = (max(loc[0], span[0]), min(loc[-1], span[-1]))
+    dis_i = span_i[1] - span_i[0]
+    if span_u[1] > span_u[0]:
+        IoU = dis_i / (span_u[1] - span_u[0])
+    else:
+        IoU = 0.0
+    if span[-1] > span[0]:
+        IoP = dis_i / (span[-1] - span[0])
+    else:
+        IoP = 0.0
+
+    return IoU, IoP
+
+
+# def eval_ground(gt_ground, pred_ground, pred_qa=None, subset=None, gs=False):
+def eval_ground(results, pred_qa=True):
+
+    mIoU, mIoP = 0, 0
+    cnt, cqt = 0, 0
+    crt3, crt5 = 0, 0
+    crtp3, crtp5 = 0, 0
+    for r in results:
+        loc_pred = r["relevant_moments"][0]  # only one prediction
+        loc_gt = r["relevant_moments_gt"]
+        # duration = r["duration"]
+        # vid = r["qid"].split("_")[1]
+        qa_pred = r["prediction"]
+        qa_gt = r["target"]
+
+        max_tIoU, max_tIoP = 0, 0
+        for gt_window in loc_gt:
+            tIoU, tIoP = get_tIoU(gt_window, loc_pred)
+            if tIoU > max_tIoU:
+                max_tIoU = tIoU
+            if tIoP > max_tIoP:
+                max_tIoP = tIoP
+
+        if max_tIoP >= 0.3:
+            crtp3 += 1
+            if max_tIoP >= 0.5:
+                crtp5 += 1
+
+                if pred_qa:
+                    if qa_pred == qa_gt:
+                        cqt += 1
+                        # print(kid)
+
+        if max_tIoU >= 0.3:
+            crt3 += 1
+            if max_tIoU >= 0.5:
+                crt5 += 1
+                # if pred_qa:
+                #     if pred_qa[kid]['answer'] == pred_qa[kid]['prediction']:
+                #         print(kid)
+
+        cnt += 1
+        mIoU += max_tIoU
+        mIoP += max_tIoP
+
+    mIoU = mIoU / cnt * 100
+    mIoP = mIoP / cnt * 100
+    print("Acc@GQA mIoP TIoP@0.3 TIoP@0.5 mIoU TIoU@0.3 TIoU@0.5 ")
+    print(
+        "{:.1f} \t {:.1f}\t {:.1f}\t {:.1f} \t {:.1f} \t {:.1f} \t {:.1f}".format(
+            cqt * 1.0 / cnt * 100,
+            mIoP,
+            crtp3 * 1.0 / cnt * 100,
+            crtp5 * 1.0 / cnt * 100,
+            mIoU,
+            crt3 * 1.0 / cnt * 100,
+            crt5 * 1.0 / cnt * 100,
+        )
+    )
+
+    return {
+        "Acc@GQA": cqt * 1.0 / cnt * 100,
+        "mIoP": mIoP,
+        "TIoP@0.3": crtp3 * 1.0 / cnt * 100,
+        "TIoP@0.5": crtp5 * 1.0 / cnt * 100,
+        "mIoU": mIoU,
+        "TIoU@0.3": crt3 * 1.0 / cnt * 100,
+        "TIoU@0.5": crt5 * 1.0 / cnt * 100,
+    }
 
 
 # @registry.register_task("moment_retrieval_SeViLa")
