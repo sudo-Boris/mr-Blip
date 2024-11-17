@@ -8,13 +8,16 @@ model:
   model_type: pretrain_flant5xl
   load_finetuned: True
   finetuned: "mr_BLIP_checkpoints/QVH/checkpoint_best.pth" # zero-shot, i.e. only localizer pretrained on QVH
-  # finetuned: ["mr_BLIP_checkpoints/QVH/checkpoint_best.pth", "mr_BLIP_checkpoints/NextQA/checkpoint_best.pth"] # finetuned model
   use_grad_checkpoint: False
   freeze_vit: True
-  task: qformer_freeze_lora_QA
+  task: qformer_freeze_lora_QA_with_localizer # Mr. Blip localizer
+  # task: qformer_freeze_lora_QA_oracle_localizer # Oracle localizer
+  # task: qformer_freeze_lora_QA # Uniform sampling
   input_time_format: seconds_integers # [seconds_integers | seconds_floats | relative_integers | relative_floats | framenumbers]
   interleave_data: True
   frame_token_aggregation: False # [mean | False]
+  num_frames_for_answer: 60
+  resample_frames: True # [True | False] whether to resample frames from the relevant moment for the answerer
 
 datasets:
   nextgqa:
@@ -33,7 +36,7 @@ run:
   # optimization-specific
   batch_size_train: 1
   batch_size_eval: 1
-  num_workers: 8
+  num_workers: 4
 
   # inference-specific
   max_len: 200
@@ -56,5 +59,5 @@ run:
   find_unused_parameters: False
 
   wandb: False
-  wandb_project: "mr_BLIP2"
+  wandb_project: "mr_BLIP"
   wandb_name: "NextGQA_eval"

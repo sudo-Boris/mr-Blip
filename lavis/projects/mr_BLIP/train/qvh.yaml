@@ -40,14 +40,15 @@ run:
   init_lr: 3e-4
   min_lr: 0
   warmup_lr: 1e-8
+  warmup_steps: 9025 # 1805 iters/ epoch * 50 epochs * 0.1 = 9025
   # warmup_steps: 4515 # 903 iters/ epoch * 50 epochs * 0.1 = 4515
-  warmup_steps: 2255 # 451 iters/ epoch * 50 epochs * 0.1 = 2255
+  # warmup_steps: 2255 # 451 iters/ epoch * 50 epochs * 0.1 = 2255
   weight_decay: 0.05
   max_epoch: 50
-  batch_size_train: 2
-  batch_size_eval: 2
+  batch_size_train: 1
+  batch_size_eval: 1
   num_workers: 8
-  accum_grad_iters: 2
+  accum_grad_iters: 8
 
   max_len: 200
   min_len: 8
@@ -72,4 +73,4 @@ run:
 
   wandb: True
   wandb_project: "mr_BLIP"
-  wandb_name: "QVH_150"
+  wandb_name: "QVH"

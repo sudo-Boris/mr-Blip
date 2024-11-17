@@ -9,7 +9,7 @@ model:
   arch: blip2_mr
   model_type: pretrain_flant5xl
   load_finetuned: True
-  finetuned: "/pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/bm66xuki/mr_BLIP2/lavis/result/mr_BLIP2/Mixed/Mixed-60-8_GPU_2-1/checkpoint_best.pth"
+  finetuned: "Your/path/to/checkpoint_best.pth"
   use_grad_checkpoint: False
   freeze_vit: True
   task: qformer_freeze_lora

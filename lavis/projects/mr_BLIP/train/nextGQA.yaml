@@ -10,10 +10,14 @@ model:
   finetuned: "mr_BLIP_checkpoints/QVH/checkpoint_best.pth"
   use_grad_checkpoint: False
   freeze_vit: True
-  task: qformer_freeze_lora_QA
+  task: qformer_freeze_lora_QA_with_localizer # Mr. Blip localizer
+  # task: qformer_freeze_lora_QA_oracle_localizer # Oracle localizer
+  # task: qformer_freeze_lora_QA # Uniform sampling
   input_time_format: seconds_integers # [seconds_integers | seconds_floats | relative_integers | relative_floats | framenumbers]
   interleave_data: True
   frame_token_aggregation: False # [mean | False]
+  num_frames_for_answer: 60
+  resample_frames: True # [True | False] whether to resample frames from the relevant moment for the answerer
 
 datasets:
   nextgqa: # name of the dataset builder
@@ -42,17 +46,17 @@ run:
   min_lr: 0
   warmup_lr: 1e-8
   # batchsize = 1, accum_grad_iters = 8, 4 GPUs
-  # warmup_steps: 4267 # 8533 iters/ epoch * 20 epochs * 0.1 = 4267
+  warmup_steps: 17066 # 8533 iters/ epoch * 20 epochs * 0.1 = 4267
   # batchsize = 2, accum_grad_iters = 4, 4 GPUs
   # warmup_steps: 8532 # 4266 iters/ epoch * 20 epochs * 0.1 = 8532
   # batchsize = 4, accum_grad_iters = 2, 4 GPUs
-  warmup_steps: 4266 # 2133 iters/ epoch * 20 epochs * 0.1 = 4266
+  # warmup_steps: 4266 # 2133 iters/ epoch * 20 epochs * 0.1 = 4266
   weight_decay: 0.05
   max_epoch: 20
-  batch_size_train: 4
+  batch_size_train: 1
   batch_size_eval: 1
   num_workers: 4
-  accum_grad_iters: 2
+  accum_grad_iters: 8
 
   max_len: 200
   min_len: 8
@@ -76,5 +80,5 @@ run:
   find_unused_parameters: True
 
   wandb: True
-  wandb_project: "mr_BLIP2"
-  wandb_name: "NextGQA-4_GPU_1"
+  wandb_project: "mr_BLIP"
+  wandb_name: "NextGQA"

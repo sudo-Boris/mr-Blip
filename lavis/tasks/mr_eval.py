@@ -12,8 +12,6 @@ from lavis.tasks.mr_utils import (
     get_ap,
 )
 
-from lavis.tasks.metrics_own import r1_and_mIoU
-
 
 def compute_average_precision_detection_wrapper(
     input_triple, tiou_thresholds=np.linspace(0.5, 0.95, 10)
@@ -205,7 +203,7 @@ def eval_moment_retrieval(submission, ground_truth, verbose=True):
         iou_thd2recall_at_one, r1_avg, mIoU, invalid_pred_num = compute_mr_r1(
             _submission, _ground_truth
         )
-        # iou_thd2recall_at_one, r1_avg, mIoU, invalid_pred_num = r1_and_mIoU(_submission)
+
         ret_metrics[name] = {
             "MR-mAP": iou_thd2average_precision,
             "MR-R1": iou_thd2recall_at_one,

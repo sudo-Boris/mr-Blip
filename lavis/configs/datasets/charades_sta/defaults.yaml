@@ -13,6 +13,8 @@ datasets:
         train:
           url: Your/path/to/train.json
           storage: Your/path/to/train.json
+          # url: Your/path/to/new_train.json
+          # storage: Your/path/to/new_train.json
         val:
           url: Your/path/to/test_float.json
           storage: Your/path/to/test_float.json

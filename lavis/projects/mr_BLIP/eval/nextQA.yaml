@@ -54,5 +54,5 @@ run:
   find_unused_parameters: False
 
   wandb: False
-  wandb_project: "mr_BLIP2"
+  wandb_project: "mr_BLIP"
   wandb_name: "NextQA_eval"

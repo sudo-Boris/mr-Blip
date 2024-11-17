@@ -74,5 +74,5 @@ run:
   find_unused_parameters: True
 
   wandb: True
-  wandb_project: "mr_BLIP2"
-  wandb_name: "NextQA-4_GPU_1"
+  wandb_project: "mr_BLIP"
+  wandb_name: "NextQA"

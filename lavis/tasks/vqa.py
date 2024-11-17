@@ -602,7 +602,6 @@ class VideoGQA(BaseTask):
 
         # if "QA" in model.task:
         outputs = model.videoQA_generate(samples)
-        # outputs = model.generate(samples)
 
         answer = outputs["answer"]
         qid = outputs["qid"]
@@ -661,6 +660,7 @@ class VideoGQA(BaseTask):
             # print(metrics["mAP"])
 
             avg_T = (metrics["TN"] + metrics["TC"] + metrics["TP"]) / 3
+            # NextGQA does not include the "Description" type questions from NextQA
             # avg_D = (metrics["DL"] + metrics["DO"] + metrics["DC"]) / 3
             avg_C = (metrics["CH"] + metrics["CW"]) / 2
             wandb.log(
@@ -766,6 +766,8 @@ class VideoGQA(BaseTask):
 
 
 def get_tIoU(loc, span):
+    # loc: (start, end) ground truth
+    # span: (start, end) prediction
 
     if span[0] == span[-1]:
         if loc[0] <= span[0] and span[0] <= loc[1]:
@@ -819,7 +821,6 @@ def eval_ground(results, pred_qa=True):
                 if pred_qa:
                     if qa_pred == qa_gt:
                         cqt += 1
-                        # print(kid)
 
         if max_tIoU >= 0.3:
             crt3 += 1

@@ -92,7 +92,7 @@ class MCVideoQADataset(MultimodalClassificationDataset, __DisplMixin):
 
                 # compute video duration based on the number of frames and fps
                 duration = ann["duration"]
-                duration - torch.tensor(duration)
+                duration = torch.tensor(duration)
 
                 time_stamps = [float(idx / fps) for idx in indices]
                 timestamps = [round(t, 2) for t in time_stamps]
@@ -109,7 +109,9 @@ class MCVideoQADataset(MultimodalClassificationDataset, __DisplMixin):
                 index = random.randint(0, len(self.annotation) - 1)
 
             ### if NextGQA
-            relevant_windows = torch.tensor(ann.get("relevant_windows", [[0, 0]]))
+            relevant_windows = torch.tensor(
+                ann.get("relevant_windows", [[0, duration.item()]])
+            )
 
         return {
             "video": frms,

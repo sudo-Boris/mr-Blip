@@ -22,6 +22,7 @@ from lavis.common.dist_utils import (
 from lavis.datasets.data_utils import prepare_sample
 
 from lavis.tasks.mr_eval import eval_submission
+from lavis.tasks.metrics_own import r1_and_mIoU
 
 
 @registry.register_task("moment_retrieval")
@@ -130,31 +131,6 @@ class MomentRetrievalTask(BaseTask):
             }
             for r in results
         ]
-
-        # # compute metrics
-        # # Recall at 1 and mean IoU
-        # r1, r1_avg, mIoU, invalid_pred_num = r1_and_mIoU(submission=results_interpreted)
-
-        # # mAP
-        # if "QVHighlight" in results[0]["qid"]:
-        #     mAP = compute_mr_ap(
-        #         submission=results_interpreted,
-        #         iou_thds=np.linspace(0.5, 0.95, 10),
-        #         max_gt_windows=None,
-        #         max_pred_windows=None,
-        #         num_workers=8,
-        #         chunksize=50,
-        #     )
-        # else:
-        #     mAP = {str(t): 0 for t in iou_tresholds}
-
-        # # if there are no keys 0.5 and 0.7, add them with value 0
-        # if "0.5" not in mAP:
-        #     mAP["0.5"] = 0
-        # if "0.7" not in mAP:
-        #     mAP["0.7"] = 0
-        # if "0.75" not in mAP:
-        #     mAP["0.75"] = 0
 
         all_metrics = eval_submission(results_interpreted, results_interpreted)
 

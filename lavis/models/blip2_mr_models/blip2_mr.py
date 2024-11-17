@@ -16,12 +16,15 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import autocast as autocast
 from transformers import T5TokenizerFast
-from transformers import LlavaNextVideoForConditionalGeneration, LlavaNextVideoProcessor
 from peft import LoraConfig, get_peft_model
 import wandb
 
 sys.path.append(sys.path[0] + "/..")
 from lavis.common.registry import registry
+from lavis.processors.blip_processors import (
+    BlipVideoEvalProcessor,
+    Blip2VideoTrainProcessor,
+)
 from lavis.models.blip2_models.blip2 import Blip2Base, disabled_train
 from lavis.models.blip2_models.modeling_t5 import T5Config, T5ForConditionalGeneration
 from lavis.common.dist_utils import is_main_process
@@ -80,6 +83,8 @@ class BLIP2_MR(Blip2Base):
         interleave_data=False,
         frame_token_aggregation=None,
         task="lora",
+        num_frames_for_answer=4,
+        resample_frames=False,
     ):
         """
         apply_lemmatizer: when set to True, postprocess predict_answers() result with lemmas.
@@ -101,7 +106,16 @@ class BLIP2_MR(Blip2Base):
         self.frame_token_aggregation = frame_token_aggregation
 
         # QA task specific
-        self.num_frames_for_answer = 4
+        self.use_localizer = True if "with_localizer" in task else False
+        self.use_oracle_localizer = True if "oracle_localizer" in task else False
+        self.resample_frames = resample_frames
+        self.num_frames_for_answer = num_frames_for_answer
+        self.video_processor_answerer_train = Blip2VideoTrainProcessor(
+            image_size=img_size, n_frms=num_frames_for_answer
+        )
+        self.video_processor_answerer_eval = BlipVideoEvalProcessor(
+            image_size=img_size, n_frms=num_frames_for_answer
+        )
         self.ANS_MAPPING_C_TO_I = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
         self.ANS_MAPPING_I_TO_C = {0: "A", 1: "B", 2: "C", 3: "D", 4: "E"}
         self.answerer_model_name = "google/t5-large-qa"
@@ -144,20 +158,10 @@ class BLIP2_MR(Blip2Base):
             # self.t5_model_answerer = T5ForConditionalGeneration.from_pretrained(
             #     t5_model, config=t5_config
             # )
-            if self.answerer_model_name == "google/t5-large-qa":
-                self.answerer_model = T5ForConditionalGeneration.from_pretrained(
-                    t5_model, config=t5_config
-                )
-                self.answerer_tokenizer = self.t5_tokenizer
-            elif self.answerer_model_name == "llava-hf/LLaVA-NeXT-Video-7B-hf":
-                self.answerer_model = (
-                    LlavaNextVideoForConditionalGeneration.from_pretrained(
-                        self.answerer_model_name
-                    )
-                )
-                self.answerer_processor = LlavaNextVideoProcessor.from_pretrained(
-                    self.answerer_model_name
-                )
+            self.answerer_model = T5ForConditionalGeneration.from_pretrained(
+                t5_model, config=t5_config
+            )
+            self.answerer_tokenizer = self.t5_tokenizer
 
         # Depending on the tokenizer, some numbers are represented as 2 tokens
         # this is annoying and needs to be fixed
@@ -167,11 +171,11 @@ class BLIP2_MR(Blip2Base):
             self.find_annoying_numbers_replacement_dict(self.annoying_numbers)
         )
 
-        logging.info(
-            "Annoying numbers and their replacement: {}".format(
-                self.annoying_numbers_replacement_dict
-            )
-        )
+        # logging.info(
+        #     "Annoying numbers and their replacement: {}".format(
+        #         self.annoying_numbers_replacement_dict
+        #     )
+        # )
 
         ### LORA ##########
 
@@ -315,86 +319,98 @@ class BLIP2_MR(Blip2Base):
         samples["query_id"] = samples["question_id"]
 
         with torch.no_grad():
-            # call generate() to get the moment retrieval
-            out_mr = self.generate(samples)
+            # # call generate() to get the moment retrieval
+            # out_mr = self.generate(samples)
 
-            ### Stage 2: VideoQA/ Answerer
+            # ### Stage 2: VideoQA/ Answerer
 
             ### Q&A input and answer
             qa_input = samples["qa_input"]
             answer = samples["qa_output"]
 
-            b, t, c, w, h = samples["video"].shape
+            if self.use_localizer:
+                # call generate() to get the moment retrieval output of localizer
+                out_mr = self.generate(samples)
 
-            # 1. uniform sampling of num_frames_for_answer from the relevant moment retrieved (out_mr['prediction'])
-            relevant_moments_out = out_mr["prediction"]
-            if self.answerer_model_name == "google/t5-large-qa":
-                relevant_moments, relevant_frames = self.get_relevant_frames(
-                    samples, relevant_moments_out, self.num_frames_for_answer
+                ### Stage 2: VideoQA/ Answerer
+                # 1. uniform sampling of num_frames_for_answer from the relevant moment retrieved (out_mr['prediction'])
+                relevant_moments_out = out_mr["prediction"]
+
+                if not self.resample_frames:
+                    relevant_moments, relevant_frames = self.get_relevant_frames(
+                        samples, relevant_moments_out, self.num_frames_for_answer
+                    )  # b, num_frames_for_answer, c, w, h
+                else:
+                    relevant_moments, relevant_frames = (
+                        self.get_relevant_frames_resampled(
+                            samples,
+                            relevant_moments_out,
+                            self.num_frames_for_answer,
+                        )
+                    )
+
+            else:
+                # Uniform sampling over entire video
+                relevant_moments = []  # for the batch
+
+                for duration in samples["duration"]:
+                    relevant_moments.append([0, duration.item()])
+
+                relevant_frames = self.extract_frames(
+                    samples, relevant_moments, self.num_frames_for_answer
                 )  # b, num_frames_for_answer, c, w, h
-            elif self.answerer_model_name == "llava-hf/LLaVA-NeXT-Video-7B-hf":
-                relevant_moments, relevant_frames = self.get_relevant_frames_resampled(
-                    samples["video"], relevant_moments_out, self.num_frames_for_answer
-                )
 
-            # 2. get answer based on those frames using videoQA_answer()
+                relevant_moments_out = [str(m) for m in relevant_moments]
+
             samples["relevant_frames"] = relevant_frames
 
             # 3. get the embeddings of the frames
-            if self.answerer_model_name == "google/t5-large-qa":
-                frames_for_answerer, frames_atts_for_answerer = (
-                    self.get_frame_embeddings_and_attentions(relevant_frames)
-                )  # b, t * n, c
+            frames_for_answerer, frames_atts_for_answerer = (
+                self.get_frame_embeddings_and_attentions(relevant_frames)
+            )  # b, t * n, c
 
-        if self.answerer_model_name == "google/t5-large-qa":
-            # 4. apply the prompt concatenation for the answerer
-            with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-                # get the tokens and embeddings for the input question
-                input_tokens_qa = self.answerer_tokenizer(
-                    qa_input,
-                    padding="longest",
-                    truncation=True,
-                    max_length=self.max_txt_len,
-                    return_tensors="pt",
-                ).to(frames_for_answerer.device)
-                inputs_embeds_qa = self.answerer_model.encoder.embed_tokens(
-                    input_tokens_qa.input_ids
-                )
+        # 4. apply the prompt concatenation for the answerer
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            # get the tokens and embeddings for the input question
+            input_tokens_qa = self.answerer_tokenizer(
+                qa_input,
+                padding="longest",
+                truncation=True,
+                max_length=self.max_txt_len,
+                return_tensors="pt",
+            ).to(frames_for_answerer.device)
+            inputs_embeds_qa = self.answerer_model.encoder.embed_tokens(
+                input_tokens_qa.input_ids
+            )
 
-                # concatenate the frames and the input question
-                inputs_embeds_qa = torch.cat(
-                    [frames_for_answerer, inputs_embeds_qa], dim=1
-                )
-                encoder_atts_qa = torch.cat(
-                    [frames_atts_for_answerer, input_tokens_qa.attention_mask], dim=1
-                )
+            # concatenate the frames and the input question
+            inputs_embeds_qa = torch.cat([frames_for_answerer, inputs_embeds_qa], dim=1)
+            encoder_atts_qa = torch.cat(
+                [frames_atts_for_answerer, input_tokens_qa.attention_mask], dim=1
+            )
 
-                output_tokens_qa = self.answerer_tokenizer(
-                    answer,
-                    padding="longest",
-                    truncation=True,
-                    max_length=self.max_txt_len,
-                    return_tensors="pt",
-                ).to(frames_for_answerer.device)
-                targets_qa = output_tokens_qa.input_ids.masked_fill(
-                    output_tokens_qa.input_ids == self.answerer_tokenizer.pad_token_id,
-                    -100,
-                )
-                output_tokens_mask_qa = output_tokens_qa.attention_mask
+            output_tokens_qa = self.answerer_tokenizer(
+                answer,
+                padding="longest",
+                truncation=True,
+                max_length=self.max_txt_len,
+                return_tensors="pt",
+            ).to(frames_for_answerer.device)
+            targets_qa = output_tokens_qa.input_ids.masked_fill(
+                output_tokens_qa.input_ids == self.answerer_tokenizer.pad_token_id,
+                -100,
+            )
+            output_tokens_mask_qa = output_tokens_qa.attention_mask
 
-                # apply the prompt for the answerer
-                outputs_qa = self.answerer_model(
-                    inputs_embeds=inputs_embeds_qa,
-                    attention_mask=encoder_atts_qa,
-                    decoder_attention_mask=output_tokens_mask_qa,
-                    return_dict=True,
-                    labels=targets_qa,
-                )
-                loss = outputs_qa.loss
-        elif self.answerer_model_name == "llava-hf/LLaVA-NeXT-Video-7B-hf":
-            # each video must have the shape (t, w, h, c)
-            # multiple videos in a btach are concatenated to a list of those videos
-            raise NotImplementedError("LLaVA-NeXT-Video-7B-hf not implemented yet.")
+            # apply the prompt for the answerer
+            outputs_qa = self.answerer_model(
+                inputs_embeds=inputs_embeds_qa,
+                attention_mask=encoder_atts_qa,
+                decoder_attention_mask=output_tokens_mask_qa,
+                return_dict=True,
+                labels=targets_qa,
+            )
+            loss = outputs_qa.loss
 
         # write the following to a wandb table
         if self.use_wandb and is_main_process():
@@ -478,7 +494,6 @@ class BLIP2_MR(Blip2Base):
 
         frames_for_t5 = self.t5_proj(frames_for_projection)
 
-        # TODO: Use average pooling to aggregate the 32 embeddings of one frame
         if self.frame_token_aggregation:
             assert self.frame_token_aggregation in [
                 "mean",
@@ -583,7 +598,8 @@ class BLIP2_MR(Blip2Base):
             # prompt will at the end look as follows:
             # <vid> f1 > f2 > ... > fT > duration </vid>\n
             video_prompt_end = [
-                "{}<extra_id_0>\n".format(">" + d.item()) for d in durations
+                "{}<extra_id_0>\n".format(">" + str(round(d.item(), 2)))
+                for d in durations
             ]
             video_prompt = ["<vid>" for _ in range(len(timestamps))]
 
@@ -610,6 +626,11 @@ class BLIP2_MR(Blip2Base):
         elif self.input_time_format == "seconds_floats":
             timestamps, durations, video_prompt = get_timestamps_as_seconds_floats(
                 timestamps, durations, self.annoying_numbers_replacement_dict
+            )
+
+        else:
+            raise ValueError(
+                "Invalid input_time_format, please choose from ['framenumbers', 'relative_floats', 'relative_integers', 'seconds_integers', 'seconds_floats']"
             )
 
         # </vid> = <extra_id_0>\n
@@ -648,10 +669,6 @@ class BLIP2_MR(Blip2Base):
         )
 
         if self.interleave_data:
-            assert (
-                "integer" in self.input_time_format
-            ), "Interleaving only works with integer time formats where one number is one token."
-
             # get the tokens and embeddings for the timestamps and durations
             batch_timestamps_tokens = []
             batch_timestamps_embs = []
@@ -999,32 +1016,63 @@ class BLIP2_MR(Blip2Base):
         else:
             samples["relevant_windows"] = samples["relevant_windows"]
         samples["query_id"] = samples["question_id"]
-        # call generate() to get the moment retrieval output
-        out_mr = self.generate(
-            samples,
-            use_nucleus_sampling=use_nucleus_sampling,
-            num_beams=num_beams,
-            max_length=max_length,
-            min_length=min_length,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
-            length_penalty=length_penalty,
-            num_captions=num_captions,
-            temperature=temperature,
-            output_attentions=output_attentions,
-        )
 
-        ### Stage 2: VideoQA/ Answerer
-        # 1. uniform sampling of num_frames_for_answer from the relevant moment retrieved (out_mr['prediction'])
-        relevant_moments_out = out_mr["prediction"]
-        if self.answerer_model_name == "google/t5-large-qa":
-            relevant_moments, relevant_frames = self.get_relevant_frames(
-                samples, relevant_moments_out, num_frames_for_answer
+        if self.use_localizer:
+            # call generate() to get the moment retrieval output
+            out_mr = self.generate(
+                samples,
+                use_nucleus_sampling=use_nucleus_sampling,
+                num_beams=num_beams,
+                max_length=max_length,
+                min_length=min_length,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+                length_penalty=length_penalty,
+                num_captions=num_captions,
+                temperature=temperature,
+                output_attentions=output_attentions,
+            )
+
+            ### Stage 2: VideoQA/ Answerer
+            # 1. uniform sampling of num_frames_for_answer from the relevant moment retrieved (out_mr['prediction'])
+            relevant_moments_out = out_mr["prediction"]
+            if not self.resample_frames:
+                relevant_moments, relevant_frames = self.get_relevant_frames(
+                    samples, relevant_moments_out, self.num_frames_for_answer
+                )  # b, num_frames_for_answer, c, w, h
+            else:
+                relevant_moments, relevant_frames = self.get_relevant_frames_resampled(
+                    samples, relevant_moments_out, self.num_frames_for_answer
+                )
+
+        elif not self.use_oracle_localizer:
+            # Uniform sampling over entire video
+            relevant_moments = []  # for the batch
+
+            for duration in samples["duration"]:
+                relevant_moments.append([0, duration.item()])
+
+            relevant_frames = self.extract_frames(
+                samples, relevant_moments, self.num_frames_for_answer
             )  # b, num_frames_for_answer, c, w, h
-        elif self.answerer_model_name == "llava-hf/LLaVA-NeXT-Video-7B-hf":
-            relevant_moments, relevant_frames = self.get_relevant_frames_resampled(
-                samples, relevant_moments_out, num_frames_for_answer
-            )  # b, num_frames_for_answer, h, w, c
+
+        else:
+            # Uniform sampling over ground truth relevant moments (Oracle setting)
+            relevant_moments = samples["relevant_windows"].tolist()  # b, n_moments, 2
+
+            # If multiple relevant moments pick the first one
+            relevant_moments = [m[0] for m in relevant_moments]  # b, 2
+
+            if not self.resample_frames:
+                relevant_frames = self.extract_frames(
+                    samples, relevant_moments, self.num_frames_for_answer
+                )  # b, num_frames_for_answer, c, w, h
+            else:
+                relevant_moments, relevant_frames = self.get_relevant_frames_resampled(
+                    samples,
+                    relevant_moments,
+                    self.num_frames_for_answer,
+                )
 
         # 2. get answer based on those frames using videoQA_answer()
         samples["relevant_frames"] = relevant_frames
@@ -1037,6 +1085,8 @@ class BLIP2_MR(Blip2Base):
             predictions = out_ans["output_text"]
             # map the predictions {0, 1, 2, 3, 4} to the actual answers letters
             predictions = [self.ANS_MAPPING_I_TO_C[pred] for pred in predictions]
+
+            relevant_moments_out = [str(m) for m in relevant_moments]
             # Log images and predictions
             if samples["iters"] % self.log_samples_every_n == 0:
                 out, self.wandb_table_data = format_wandb_log_images_and_predictions_QA(
@@ -1073,6 +1123,13 @@ class BLIP2_MR(Blip2Base):
 
         assert len(relevant_moments) == samples["video"].shape[0]
 
+        relevant_frames = self.extract_frames(
+            samples, relevant_moments, num_frames_for_answer
+        )
+
+        return relevant_moments, relevant_frames
+
+    def extract_frames(self, samples, relevant_moments, num_frames_for_answer):
         relevant_frames = []  # b, num_frames_for_answer, c, w, h
 
         for i, (start, end) in enumerate(relevant_moments):
@@ -1109,7 +1166,7 @@ class BLIP2_MR(Blip2Base):
             relevant_frames
         )  # b, num_frames_for_answer, c, w, h
 
-        return relevant_moments, relevant_frames
+        return relevant_frames
 
     def get_relevant_frames_resampled(
         self, samples, relevant_moments, num_frames_for_answer
@@ -1130,21 +1187,24 @@ class BLIP2_MR(Blip2Base):
         """
         relevant_moments_formatted = []  # for the batch
 
-        for i, sample in enumerate(relevant_moments):
-            moments_formatted = moment_str_to_list(sample)
+        if isinstance(relevant_moments[0], str):
+            for i, sample in enumerate(relevant_moments):
+                moments_formatted = moment_str_to_list(sample)
 
-            if moments_formatted == [[-1, -1]]:
-                moments_formatted = [0, round(samples["duration"][i].item())]
-            elif len(moments_formatted) > 1:
-                # if there are multiple moments, take the first one (FOR NOW)
-                moments_formatted = moments_formatted[0]
-            else:
-                moments_formatted = moments_formatted[0]
+                if moments_formatted == [[-1, -1]]:
+                    moments_formatted = [0, round(samples["duration"][i].item())]
+                elif len(moments_formatted) > 1:
+                    # if there are multiple moments, take the first one (FOR NOW)
+                    moments_formatted = moments_formatted[0]
+                else:
+                    moments_formatted = moments_formatted[0]
 
-            if moments_formatted[1] > samples["duration"][i].item():
-                moments_formatted[1] = round(samples["duration"][i].item())
+                if moments_formatted[1] > samples["duration"][i].item():
+                    moments_formatted[1] = round(samples["duration"][i].item())
 
-            relevant_moments_formatted.append(moments_formatted)
+                relevant_moments_formatted.append(moments_formatted)
+        else:
+            relevant_moments_formatted = relevant_moments
 
         assert len(relevant_moments_formatted) == samples["video"].shape[0]
 
@@ -1155,13 +1215,23 @@ class BLIP2_MR(Blip2Base):
             if start >= end:
                 end = samples["duration"][i].item()
 
-            frames = get_frames(
-                samples["video_path"][i], start, end, num_frames_for_answer
-            )
+            # The video processor is already set to extract ```n_frames_for_answer``` frames.
+            frames, indices, fps = self.video_processor_answerer_eval(
+                samples["video_path"][i], clip_proposal=[start, end]
+            )  # c, n_frames_for_answer, h, w
+
+            frames = frames.permute(1, 0, 2, 3)  # n_frames_for_answer, c, h, w
 
             relevant_frames.append(frames)
 
-        return relevant_moments, relevant_frames  # b, num_frames_for_answer, h, w, c
+        relevant_frames = torch.stack(relevant_frames).to(
+            samples["video"].device
+        )  # b, num_frames_for_answer, c, w, h
+
+        return (
+            relevant_moments_formatted,
+            relevant_frames,
+        )  # b, num_frames_for_answer, h, w, c
 
     def videoQA_answer(
         self,
@@ -1185,100 +1255,55 @@ class BLIP2_MR(Blip2Base):
 
         # b, t, c, w, h = samples["relevant_frames"].shape
 
-        if self.answerer_model_name == "google/t5-large-qa":
-            # 1. get the embeddings of the frames
-            frames_for_t5, frames_atts_for_t5 = (
-                self.get_frame_embeddings_and_attentions(samples["relevant_frames"])
-            )  # b, t * n, c
+        # 1. get the embeddings of the frames
+        frames_for_t5, frames_atts_for_t5 = self.get_frame_embeddings_and_attentions(
+            samples["relevant_frames"]
+        )  # b, t * n, c
 
-            # 2. apply the prompt concatenation for the answerer
-            # self.vid_prefix = ["Frame {}: ".format(str(i + 1)) for i in range(t)]
-            with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-                # get the tokens and embeddings for the input question
-                input_tokens_qa = self.t5_tokenizer(
-                    qa_input,
-                    padding="longest",
-                    truncation=True,
-                    max_length=self.max_txt_len,
-                    return_tensors="pt",
-                ).to(frames_for_t5.device)
-                inputs_embeds_qa = self.t5_model.encoder.embed_tokens(
-                    input_tokens_qa.input_ids
-                )
-
-                # concatenate the frames and the input question
-                inputs_embeds_qa = torch.cat([frames_for_t5, inputs_embeds_qa], dim=1)
-                encoder_atts_qa = torch.cat(
-                    [frames_atts_for_t5, input_tokens_qa.attention_mask], dim=1
-                )
-
-            # 3. generate the answer using the answerer (t5_model_answerer)
-            outputs_qa = self.answerer_model.generate(
-                inputs_embeds=inputs_embeds_qa,
-                attention_mask=encoder_atts_qa,
-                do_sample=use_nucleus_sampling,
-                top_p=top_p,
-                temperature=temperature,
-                num_beams=1,
-                max_new_tokens=max_length,
-                min_length=min_length,
-                repetition_penalty=repetition_penalty,
-                length_penalty=length_penalty,
-                num_return_sequences=num_captions,
-                return_dict_in_generate=True,
-                # output_hidden_states=True,
-                output_scores=True,
+        # 2. apply the prompt concatenation for the answerer
+        # self.vid_prefix = ["Frame {}: ".format(str(i + 1)) for i in range(t)]
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            # get the tokens and embeddings for the input question
+            input_tokens_qa = self.t5_tokenizer(
+                qa_input,
+                padding="longest",
+                truncation=True,
+                max_length=self.max_txt_len,
+                return_tensors="pt",
+            ).to(frames_for_t5.device)
+            inputs_embeds_qa = self.t5_model.encoder.embed_tokens(
+                input_tokens_qa.input_ids
             )
 
-            # 4. post-process the answer. Extract the logits from only the answer_ids and pick the argmax
-            answer_id = [71, 272, 205, 309, 262]  # A B C D E
-            # answer_id = [
-            #     self.t5_tokenizer.convert_tokens_to_ids(option) for option in "ABCDE"
-            # ]
-        elif self.answerer_model_name == "llava-hf/LLaVA-NeXT-Video-7B-hf":
-            # raise NotImplementedError("LLaVA-NeXT-Video-7B-hf not implemented yet.")
-            videos = samples["relevant_frames"]
-            # each video must have the shape (t, h, w, c)
-            # videos = [video.permute(0, 2, 3, 1) for video in relevant_frames]
-
-            prompts = []
-
-            # 1. Apply the chat template to the QA input
-            for qa_input in samples["qa_input"]:
-                conversation = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": qa_input},
-                            {"type": "video"},
-                        ],
-                    }
-                ]
-
-                prompt = self.answerer_processor.apply_chat_template(
-                    conversation, add_generation_prompt=True
-                )
-                prompts.append(prompt)
-
-            # 2. Format the input for the answerer
-            inputs = self.answerer_processor(
-                text=prompts, videos=videos, return_tensors="pt", padding=True
-            ).to(self.answerer_model.device)
-
-            # 3. Generate the answer
-            outputs_qa = self.answerer_model.generate(
-                **inputs,
-                return_dict_in_generate=True,
-                max_new_tokens=5,
-                output_scores=True,
+            # concatenate the frames and the input question
+            inputs_embeds_qa = torch.cat([frames_for_t5, inputs_embeds_qa], dim=1)
+            encoder_atts_qa = torch.cat(
+                [frames_atts_for_t5, input_tokens_qa.attention_mask], dim=1
             )
 
-            # 4. post-process the answer. Extract the logits from only the answer_ids and pick the argmax
-            answer_id = [319, 350, 315, 360, 382]  # A B C D E
-            # answer_id = [
-            #     self.answerer_processor.tokenizer.convert_tokens_to_ids(option)
-            #     for option in "ABCDE"
-            # ]
+        # 3. generate the answer using the answerer (t5_model_answerer)
+        outputs_qa = self.answerer_model.generate(
+            inputs_embeds=inputs_embeds_qa,
+            attention_mask=encoder_atts_qa,
+            do_sample=use_nucleus_sampling,
+            top_p=top_p,
+            temperature=temperature,
+            num_beams=1,
+            max_new_tokens=max_length,
+            min_length=min_length,
+            repetition_penalty=repetition_penalty,
+            length_penalty=length_penalty,
+            num_return_sequences=num_captions,
+            return_dict_in_generate=True,
+            # output_hidden_states=True,
+            output_scores=True,
+        )
+
+        # 4. post-process the answer. Extract the logits from only the answer_ids and pick the argmax
+        answer_id = [71, 272, 205, 309, 262]  # A B C D E
+        # answer_id = [
+        #     self.t5_tokenizer.convert_tokens_to_ids(option) for option in "ABCDE"
+        # ]
 
         pred_logits_qa = outputs_qa.scores[1]  # b, voc_size
         pred_logits_qa = pred_logits_qa[:, answer_id]  # b, 5
@@ -1416,6 +1441,9 @@ class BLIP2_MR(Blip2Base):
         apply_lemmatizer = cfg.get("apply_lemmatizer", False)
         task = cfg.get("task", "qformer_freeze_lora")
 
+        num_frames_for_answer = cfg.get("num_frames_for_answer", 4)
+        resample_frames = cfg.get("resample_frames", False)
+
         model = cls(
             img_size=img_size,
             drop_path_rate=drop_path_rate,
@@ -1432,6 +1460,8 @@ class BLIP2_MR(Blip2Base):
             interleave_data=interleave_data,
             frame_token_aggregation=frame_token_aggregation,
             task=task,
+            num_frames_for_answer=num_frames_for_answer,
+            resample_frames=resample_frames,
         )
         model.load_checkpoint_from_config(cfg)
 
@@ -1459,11 +1489,6 @@ class BLIP2_MR(Blip2Base):
                 finetune_path is not None
             ), "Found load_finetuned is True, but finetune_path is None."
 
-            # if isinstance(finetune_path, Sequence):
-            #     for path in finetune_path:
-            #         self.load_checkpoint(url_or_filename=path)
-            #         logging.info("load finetuned weights from %s" % path)
-            # else:
             self.load_checkpoint(url_or_filename=finetune_path)
             logging.info("load finetuned weights from %s" % finetune_path)
         else:

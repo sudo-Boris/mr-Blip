@@ -42,12 +42,13 @@ run:
   warmup_lr: 1e-8
   # warmup_steps: 1074 # 10% * 30 epochs * 349 steps/epoch = 1047
   # warmup_steps: 1396 # 10% * 40 epochs * 349 steps/epoch = 1396
-  warmup_steps: 1745 # 10% * 50 epochs * 349 steps/epoch = 1745
+  warmup_steps: 698 # 10% * 20 epochs * 349 steps/epoch = 698
+  # warmup_steps: 1745 # 10% * 50 epochs * 349 steps/epoch = 1745
   # warmup_steps: 965 # 10% * 50 epochs * 193 steps/epoch = 965
   weight_decay: 0.05
-  max_epoch: 50
-  batch_size_train: 4
-  batch_size_eval: 4
+  max_epoch: 20
+  batch_size_train: 8
+  batch_size_eval: 8
   num_workers: 8
   accum_grad_iters: 1
 
@@ -56,7 +57,7 @@ run:
   num_beams: 5
 
   seed: 42
-  output_dir: "result/mr_BLIP/Charades/"
+  output_dir: "result/mr_BLIP/Charades"
 
   amp: True
   resume_ckpt_path: null
@@ -67,7 +68,7 @@ run:
   test_splits: ["test"]
 
   device: "cuda"
-  world_size: 8
+  world_size: 4
   dist_url: "env://"
   distributed: True
   find_unused_parameters: True

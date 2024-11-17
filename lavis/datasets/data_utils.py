@@ -61,7 +61,13 @@ def load_video(
             else:
                 indices.append(rnd.choice(range(x[0], x[1])))
     elif sampling == "uniform":
-        indices = [(x[0] + x[1]) // 2 for x in ranges]
+        indices = []
+        for x in ranges:
+            index = (x[0] + x[1]) // 2
+            if index < vlen:
+                indices.append(index)
+            else:
+                indices.append(vlen - 1)
 
     elif sampling == "headtail":
         indices_h = sorted(rnd.sample(range(vlen // 2), n_frms // 2))

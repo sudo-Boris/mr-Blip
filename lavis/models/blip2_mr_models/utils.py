@@ -630,7 +630,7 @@ def get_frames(video_path, start_time, end_time, n_frames=4):
         n_frames (int): number of frames to get
 
     Returns:
-        torch.Tensor: tensor of frames. Shape: (n_frames, height, width, 3)
+        torch.Tensor: tensor of frames. Shape: (n_frames, 3, height, width)
 
     """
     assert n_frames > 0, "n_frames must be greater than 0"
@@ -651,6 +651,10 @@ def get_frames(video_path, start_time, end_time, n_frames=4):
                 continue
             if frame.time > end_time:
                 break
+
+            # resize frame to 224x224
+            frame = frame.reformat(width=224, height=224)
+
             frames.append(frame)
 
         if frames == []:
@@ -671,11 +675,22 @@ def get_frames(video_path, start_time, end_time, n_frames=4):
             frames = [frames[i] for i in range(0, len(frames), len(frames) // n_frames)]
 
         if len(frames) > n_frames:
-            frames = frames[1:]
+            # remove the last frames if there are more than n_frames
+            frames = frames[:n_frames]
 
     if n_frames > 1:
-        frames = torch.Tensor(np.stack([x.to_ndarray(format="rgb24") for x in frames]))
+        frames = torch.as_tensor(
+            np.stack([x.to_ndarray(format="rgb24") for x in frames]),
+            # half precision
+            dtype=torch.float16,
+        )  # (n_frames, height, width, 3)
+        # change to (n_frames, 3, height, width)
+        frames = frames.permute(0, 3, 1, 2)
     else:
-        frames = torch.Tensor(np.asarray([frames[0].to_ndarray(format="rgb24")]))
+        frames = torch.as_tensor(
+            np.asarray([frames[0].to_ndarray(format="rgb24")]), dtype=torch.float16
+        )  # (1, height, width, 3)
+        # change to (1, 3, height, width)
+        frames = frames.permute(0, 3, 1, 2)
 
     return frames
