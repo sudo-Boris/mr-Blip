@@ -136,7 +136,7 @@ We thank the developers of [LAVIS](https://github.com/salesforce/LAVIS) and [BLI
 Please cite our paper if you use our models in your works:
 
 ```bibtex
-@article{{meinardus2024surprisingeffectivenessmultimodallarge,
+@article{meinardus2024surprisingeffectivenessmultimodallarge,
       title={The Surprising Effectiveness of Multimodal Large Language Models for Video Moment Retrieval}, 
       author={Boris Meinardus and Anil Batra and Anna Rohrbach and Marcus Rohrbach},
       year={2024},
