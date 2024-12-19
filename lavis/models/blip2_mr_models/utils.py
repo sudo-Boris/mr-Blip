@@ -1,13 +1,14 @@
+import ast
+import logging
 import os
 import re
-import ast
-import av
-import logging
 
+import av
+import numpy as np
 import torch
 from torch.cuda.amp import autocast as autocast
+
 import wandb
-import numpy as np
 
 # set the environment variable TOKENIZERS_PARALLELISM = false
 # to disable tokenizers parallelism
@@ -74,97 +75,6 @@ def post_process(pred):
             t_start, t_end = numbers
             if int(t_start) > int(t_end):
                 window = "[" + t_end + ", " + t_start + "]"
-
-        output.append(window)
-
-    output = "[" + ", ".join(output) + "]"
-
-    return output
-
-
-def post_process_TAL(pred):
-    """Post process predicted output to be in the format of moments with labels, i.e. [[0, 1, "label"], [4, 7, "label"]].
-        - if no comma, i.e. " " → add comma, i.e. ", "
-        - if t_start > t_end → swap them
-        - if two comma: ",," → ","
-    Args:
-        pred (str): predicted output with potential errors, e.g. "[[0, 1, "label"], [4, 7, "label"]]"
-    Returns:
-        str: post processed predicted output, e.g. "[[0, 1, "label"], [4, 7, "label"]]"
-    """
-
-    pred = pred.split("</s>")[0]
-
-    # if the string ends with a ",]", remove the comma
-    # e.g.
-    #   "[[0, 1, "label"], [4, 7, "label"],]" -> "[[0, 1, "label"], [4, 7, "label"]]"
-    pred = re.sub(r",+\]", "]", pred)
-
-    # check if the string has the right format of a nested list
-    # the list should look like this: [[0, 1, "label"], [4, 7, "label"], ...]
-    # if not, return "[[-1, -1]]"
-    if not re.match(r"\[\[.*\]\]", pred):
-        return "[[-1, -1, -1]]"
-
-    # remove the first and last bracket
-    # e.g.
-    #   [[0, 1, "label"] [4, 7, "label"]] -> [0, 1, "label"] [4, 7, "label"]
-    #   [[0, 1, "label"], [4, 7, "label"]] -> [0, 1, "label"], [4, 7, "label"]
-    pred = pred[1:-1]
-
-    # split at any white space that is followed by a "[" to get a list of windows
-    # e.g.
-    #   "[0, 1, "label"] [4, 7, "label"]" → ["[0, 1, "label"]", "[4, 7, "label"]"]
-    #   "[0, 1, "label"], [4, 7, "label"]" → ["[0, 1, "label"],", "[4, 7, "label"]"]
-    windows = re.split(r"\s+(?=\[)", pred)
-
-    output = []
-
-    for window in windows:
-        # if there is one or more comma at the end of the window, remove it
-        # e.g.
-        #   "[0, 1, "label"]," → "[0, 1, "label"]"
-        #   "[0, 1, "label"],," → "[0, 1, "label"]"
-        window = re.sub(r",+$", "", window)
-
-        # if there is no comma in the window, add one
-        # e.g.
-        #   "[0 1, "label"]" → "[0, 1, "label"]"
-        window = re.sub(r"(\d) (\d)", r"\1, \2", window)
-        # e.g.
-        #  "[0, 1 "label"]" → "[0, 1, "label"]"
-        window = re.sub(r"(\d), (\d) (\w+)", r"\1, \2, \3", window)
-        # e.g.
-        #  "[0 1 label]" → "[0, 1, "label"]"
-        window = re.sub(r"(\d) (\d) (\w+)", r"\1, \2, \3", window)
-
-        # if there are two or more commas in the window, remove all but one
-        # e.g.
-        #   "[0,, 1, "label"]" → "[0, 1, "label"]"
-        window = re.sub(r",+", ",", window)
-
-        # if the two numbers are not in the right order, swap them
-        # e.g.
-        #   "[1, 0, "label"]" → "[0, 1, "label"]"
-        # find all numbers in the window
-        numbers = re.findall(r"\d+", window)
-        # find the labels in the window
-        # first remove the numbers
-        text = re.sub(r"\d+", "", window)
-        # then find the labels
-        label = re.findall(r"\w+", text)
-        if label == []:
-            label = ['"No label"']
-
-        # get the two numbers
-        if len(numbers) == 2:
-            t_start, t_end = numbers
-            if int(t_start) > int(t_end):
-                window = "[" + t_end + ", " + t_start + ", '" + " ".join(label) + "']"
-            # else:
-            #     window = "[" + t_start + ", " + t_end + ", '" + " ".join(label) + "']"
-        else:
-            return "[[-1, -1, -1]]"
 
         output.append(window)
 
