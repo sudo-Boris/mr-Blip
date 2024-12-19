@@ -6,40 +6,39 @@
 """
 
 import logging
-
 import os
-import sys
 import re
+import sys
 from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
+from peft import LoraConfig, get_peft_model
 from torch.cuda.amp import autocast as autocast
 from transformers import T5TokenizerFast
-from peft import LoraConfig, get_peft_model
+
 import wandb
 
 sys.path.append(sys.path[0] + "/..")
+from lavis.common.dist_utils import is_main_process
 from lavis.common.registry import registry
-from lavis.processors.blip_processors import (
-    BlipVideoEvalProcessor,
-    Blip2VideoTrainProcessor,
-)
 from lavis.models.blip2_models.blip2 import Blip2Base, disabled_train
 from lavis.models.blip2_models.modeling_t5 import T5Config, T5ForConditionalGeneration
-from lavis.common.dist_utils import is_main_process
 from lavis.models.blip2_mr_models.utils import (
     format_wandb_log_images_and_predictions,
     format_wandb_log_images_and_predictions_QA,
-    post_process,
-    post_process_TAL,
-    moment_str_to_list,
-    get_timestamps_as_seconds_integers,
+    get_frames,
+    get_timestamps_as_framenumbers,
+    get_timestamps_as_relative_floats,
     get_timestamps_as_relative_integers,
     get_timestamps_as_seconds_floats,
-    get_timestamps_as_relative_floats,
-    get_timestamps_as_framenumbers,
-    get_frames,
+    get_timestamps_as_seconds_integers,
+    moment_str_to_list,
+    post_process,
+)
+from lavis.processors.blip_processors import (
+    Blip2VideoTrainProcessor,
+    BlipVideoEvalProcessor,
 )
 
 # set the environment variable TOKENIZERS_PARALLELISM = false
@@ -92,10 +91,7 @@ class BLIP2_MR(Blip2Base):
         super().__init__()
 
         self.task = task
-        if "TAL" in task:
-            self.post_process = post_process_TAL
-        else:
-            self.post_process = post_process
+        self.post_process = post_process
         self.use_lora = True if "lora" in task else False
         self.use_wandb = True if wandb.run is not None else False
         self.log_samples_every_n = 3000
@@ -834,7 +830,7 @@ class BLIP2_MR(Blip2Base):
         use_nucleus_sampling=False,
         num_beams=5,
         max_length=50,
-        min_length=8,
+        min_length=1,
         top_p=0.9,
         repetition_penalty=1.0,
         length_penalty=1.0,
