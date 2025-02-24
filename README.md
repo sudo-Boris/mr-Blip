@@ -1,11 +1,9 @@
 # The Surprising Effectiveness of Multimodal Large Language Models for Video Moment Retrieval
 
-* Authors: [Boris Meinardus](https://sudo-boris.github.io/), [Anil Batra](https://anilbatra2185.github.io/), [Anna Rohrbach](https://anna-rohrbach.net/), [Marcus Rohrbach](https://rohrbach.vision/)
+* Authors: [Boris Meinardus](https://sudo-boris.github.io/), [Hector Garcia Rodriguez](https://hector.gr/), [Anil Batra](https://anilbatra2185.github.io/), [Anna Rohrbach](https://anna-rohrbach.net/), [Marcus Rohrbach](https://rohrbach.vision/)
 * Paper: [arxiv](http://arxiv.org/abs/2406.18113)
 
-We introduce Mr. BLIP (Mr. as in Moment Retrieval), a multimodal, single-stage model that requires no expensive video-language pretraining, no additional input signal (e.g., no transcript or audio) and has a simpler and more versatile design than prior state-of-the-art methods.
-We achieve a new state-of-the-art in moment retrieval on the widely used benchmarks Charades-STA, QVHighlights, and ActivityNet Captions.
-Notably, we attain over 9% (absolute) higher Recall (at 0.5 and 0.7 IoU) on the challenging long-video multi-moment QVHighlights benchmark.
+The recent success of Large Language Models (LLMs) has prompted the extension to the multimodal domain developing image-text Multimodal LLMs (MLLMs) and then video-text models. In this work, we investigate the challenge of contextual and temporal comprehension in video-language models by exploring the task of temporal localization in videos. To address this problem, prior works have developed complex task-specific architectures, novel modules to embed time into MLLMs, or leveraged additional input signals such as video transcripts to best encode contextual and temporal information. Interestingly, we find that most of these efforts are surpassed by a much simpler design. We introduce Chrono, a universal sequence blueprint that can be applied to an image-text pretrained MLLM. Through extensive ablations across different MLLM architectures, finetuning and zero-shot settings, and different datasets, we achieve a new SOTA in moment retrieval on the most widely used benchmarks Charades-STA, QVHighlights, ActivityNet Captions, and grounded video question answering on NeXT-GQA.
 
 <p align="center">
   <img src="./assets/teaser.png" alt="teaser image" width="600"/>
@@ -136,10 +134,10 @@ We thank the developers of [LAVIS](https://github.com/salesforce/LAVIS) and [BLI
 Please cite our paper if you use our models in your works:
 
 ```bibtex
-@article{meinardus2024surprisingeffectivenessmultimodallarge,
-      title={The Surprising Effectiveness of Multimodal Large Language Models for Video Moment Retrieval}, 
-      author={Boris Meinardus and Anil Batra and Anna Rohrbach and Marcus Rohrbach},
-      year={2024},
+@article{meinardus2025chronosimpleblueprintrepresenting,
+      title={Chrono: A Simple Blueprint for Representing Time in MLLMs}, 
+      author={Boris Meinardus and Hector Garcia Rodriguez and Anil Batra and Anna Rohrbach and Marcus Rohrbach},
+      year={2025},
       eprint={2406.18113},
       archivePrefix={arXiv},
       primaryClass={cs.CV},
