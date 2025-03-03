@@ -1,4 +1,4 @@
-# The Surprising Effectiveness of Multimodal Large Language Models for Video Moment Retrieval
+# Chrono: A Simple Blueprint for Representing Time in MLLMs
 
 * Authors: [Boris Meinardus](https://sudo-boris.github.io/), [Hector Garcia Rodriguez](https://hector.gr/), [Anil Batra](https://anilbatra2185.github.io/), [Anna Rohrbach](https://anna-rohrbach.net/), [Marcus Rohrbach](https://rohrbach.vision/)
 * Paper: [arxiv](http://arxiv.org/abs/2406.18113)
