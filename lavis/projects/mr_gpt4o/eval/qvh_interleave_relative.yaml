@@ -1,0 +1,90 @@
+ # Adapted from Copyright (c)  2022, salesforce.com, inc.
+ # All rights reserved.
+ # SPDX-License-Identifier: BSD-3-Clause
+ # For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
+
+model:
+  arch: mr_gpt4o
+  model_type: gpt4o
+  load_finetuned: False
+
+
+  prompt: ""
+  max_tokens: 16384 # max tokens for gpt-4o is 16384 for completion
+  task: add_duration_no_task_prompt
+  
+  gpt_model: "gpt-4o"
+  gpt_temperature: 0 # 0.7
+
+  image_detail: low # [low | high | auto] # https://platform.openai.com/docs/guides/vision/low-or-high-fidelity-image-understanding
+  input_time_format: relative_integers 
+  interleave_data: True
+  use_short_interleave: False
+  use_timestamps: True
+  use_task_prompt: True
+  only_frames: False
+  add_duration: True
+
+
+datasets:
+  qvh:
+    collate_clips: True
+    vis_processor:
+        eval:
+          name: "gpt4o_video_eval"
+          n_frms: 60
+    text_processor:
+        eval:
+          name: "gpt4o_caption"
+    build_info:
+      # Be careful not to append minus sign (-) before split to avoid itemizing
+      annotations:
+        train:
+          url: /path/to/your/annotations/QVHighlights/lavis/train.json
+          storage: /path/to/your/annotations/QVHighlights/lavis/train.json
+        val:
+          url: /path/to/your/annotations/QVHighlights/lavis/val.json
+          storage: /path/to/your/annotations/QVHighlights/lavis/val.json
+
+        test:
+          url: /path/to/your/annotations/QVHighlights/lavis/test_dummy.json
+          storage: /path/to/your/annotations/QVHighlights/lavis/test_dummy.json
+        
+      
+run:
+  task: moment_retrieval
+  # optimization-specific
+  batch_size_train: 1
+  batch_size_eval: 1
+  num_workers: 8
+
+  # from_file: True
+  # results_path: "lavis/result/mr_gpt4o/Charades/eval_interleave_relative/result/val_epochbest.json"
+  eval:
+    post_process_gpt4o: true
+    enforce_single_window: true  # or false
+  
+  # inference-specific
+  max_len: 200
+  min_len: 5
+  num_beams: 5
+  inference_method: "generate"
+
+  seed: 42  
+  output_dir: "result/mr_gpt4o/QVH/eval_interleave_relative"
+  full_output_dir: "result/mr_gpt4o/QVH/eval_interleave_relative"
+  save_every_sample: True
+
+  evaluate: True
+  test_splits: ["val"]
+
+  # distribution-specific
+  device: "cpu"
+  # world_size: 8
+  # dist_url: "env://"
+  distributed: False
+  find_unused_parameters: False
+
+  wandb: False
+  wandb_project: "mr_BLIP2"
+  wandb_name: "QVH_eval"

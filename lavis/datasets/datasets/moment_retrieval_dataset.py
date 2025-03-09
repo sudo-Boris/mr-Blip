@@ -1,0 +1,148 @@
+import os
+
+import torch
+from torch.utils.data.dataloader import default_collate
+
+from lavis.datasets.datasets.base_dataset import BaseDataset
+
+
+class MomentRetrievalDataset(BaseDataset):
+    def __init__(self, vis_processor, text_processor, vis_root, ann_paths, 
+                 collate_clips=False, start_idx=None, end_idx=None):
+        """
+        vis_root (string): Root directory of images (e.g. coco/images/)
+        ann_root (string): directory to store the annotation file
+        split (string): val or test
+        """
+        self.collate_clips = collate_clips
+        super().__init__(vis_processor, text_processor, vis_root, ann_paths, start_idx, end_idx)
+        
+
+    def __getitem__(self, index):
+        ann = self.annotation[index]
+
+        # set video clip if 'start'&'end' timestamp in data
+        if "start" in ann:
+            start, end = float(ann["start"]), float(ann["end"])
+            # start, end = int(float(ann["start"]) * 100), int(float(ann["end"]) * 100)
+            clip = [start, end]
+        else:
+            clip = None
+
+        vname = ann["video"]
+        video_path = os.path.join(self.vis_root, vname + ".mp4")
+
+        frms, indices, fps = self.vis_processor(video_path, clip_proposal=clip)
+        query = ann["query"]
+        relevant_windows = str(ann["relevant_windows"])
+
+        query_prompt = "Query: " + query + "\n"
+        task_prompt = "Given the video and the query, find the relevant windows.\nRelevant windows: "
+        video_prompt_end = "<extra_id_0>"
+
+        # generate video prompt in the following format:
+        # <vid><t><t+1><t+2>…<duration>[frame embeddings]</vid>
+        # where <vid> is the video id, and <t> are the timestamps of each frame
+
+        time_stamps = [float(idx / fps) for idx in indices]
+        duration = ann["duration"]
+
+        timestamps = [round(t, 2) for t in time_stamps]
+        if isinstance(frms, torch.Tensor):
+            frms = frms.permute(1, 0, 2, 3)
+            timestamps = torch.tensor(timestamps)
+            duration = torch.tensor(duration)
+        return {
+            "video": frms,
+            "duration": duration,
+            "query_id": ann["qid"],
+            "timestamps": timestamps,
+            "video_prompt_end": video_prompt_end,
+            "query_prompt": query_prompt,
+            "task_prompt": task_prompt,
+            "relevant_windows": relevant_windows,
+        }
+    
+    def collater(self, samples):
+        if self.collate_clips:
+            # this joins two clips across frames
+            #  [samples[0]['video'], samples[1]['video']] -> 
+            # -> [[samples[0]['video'][0], samples[0]['video'][1], ...], [samples[1]['video'][0], samples[1]['video'][1], ...]]
+            out = {}
+            # Assume all samples have the same keys
+            for key in samples[0].keys():
+                # For 'video', you'll just get a list of lists of strings
+                # For numeric fields, you might want to do torch.stack
+                out[key] = [sample[key] for sample in samples]
+            return out
+        else:
+            # this joins two clips across frames
+            #  [samples[0]['video'], samples[1]['video']] -> 
+            # -> [[samples[0]['video'][0], samples[1]['video'][0]], [samples[0]['video'][1], samples[1]['video'][1]], ...]
+            return default_collate(samples)
+
+
+class MomentRetrievalQuestionsDataset(BaseDataset):
+    def __init__(self, vis_processor, text_processor, vis_root, ann_paths):
+        """
+        vis_root (string): Root directory of images (e.g. coco/images/)
+        ann_root (string): directory to store the annotation file
+        split (string): val or test
+        """
+        super().__init__(vis_processor, text_processor, vis_root, ann_paths)
+
+    def __getitem__(self, index):
+        ann = self.annotation[index]
+
+        # set video clip if 'start'&'end' timestamp in data
+        if "start" in ann:
+            start, end = float(ann["start"]), float(ann["end"])
+            # start, end = int(float(ann["start"]) * 100), int(float(ann["end"]) * 100)
+            clip = [start, end]
+        else:
+            clip = None
+
+        vname = ann["video"]
+        video_path = os.path.join(self.vis_root, vname + ".mp4")
+
+        frms, indices, fps = self.vis_processor(video_path, clip_proposal=clip)
+        frms = frms.permute(1, 0, 2, 3)
+        query = ann["query"]
+        duration = ann["duration"]
+        relevant_windows = str(ann["relevant_windows"])
+
+        if "num_option" in ann:
+            hints = "Options: ("
+            # hints = 'Captions: ('
+            for j in range(ann["num_option"]):
+                ans = ann["a{}".format(str(j))]
+                hints += ans
+                hints += " "
+            hints = hints[:-1]  # remove last space
+            hints += ")"
+
+            query_prompt = "Query: " + query + " " + hints + "\n"
+        else:
+            query_prompt = "Query: " + query + "\n"
+        task_prompt = "Given the video and the query, find the relevant windows.\nRelevant windows: "
+
+        ### timestamps
+        time_stamps = [float(idx / fps) for idx in indices]
+        timestamps = [round(t, 2) for t in time_stamps]
+        timestamps = torch.tensor(timestamps)
+
+        duration = torch.tensor(duration)
+
+        video_prompt_end = "<extra_id_0>"
+
+        # "image_id" is kept to stay compatible with the COCO evaluation format
+        return {
+            "video": frms,
+            "duration": duration,
+            "query_id": ann["qid"],
+            "timestamps": timestamps,
+            "video_prompt_end": video_prompt_end,
+            "query_prompt": query_prompt,
+            "task_prompt": task_prompt,
+            "relevant_windows": relevant_windows,
+        }
